@@ -12,6 +12,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { mockStudent } from '@/lib/mock-data'
 import { getInitials, cn } from '@/lib/utils'
+import { useAppStore } from '@/lib/app-store'
+import { ProGate } from '@/components/ui/pro-gate'
 import type { AIMessage } from '@/lib/types'
 
 const quickPrompts = [
@@ -93,12 +95,23 @@ function renderBold(text: string): React.ReactNode {
 }
 
 export default function AIAssistantPage() {
+  const { plan } = useAppStore()
   const [messages, setMessages] = useState<AIMessage[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  if (plan === 'free') {
+    return (
+      <ProGate
+        feature="ai"
+        title="AI Assistant is a Pro Feature"
+        description="Get unlimited access to your AI academic assistant — ask for summaries, study plans, flashcards, essay help, and more. Powered by Llama 3.3 70B."
+      />
+    )
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

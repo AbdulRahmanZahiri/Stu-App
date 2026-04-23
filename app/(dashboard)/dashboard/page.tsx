@@ -12,8 +12,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { mockStudent, mockCourses, mockTasks, mockDashboardStats, mockCourseGrades } from '@/lib/mock-data'
+import { mockStudent, mockCourses, mockDashboardStats, mockCourseGrades } from '@/lib/mock-data'
 import { formatRelativeDate, getLetterGrade, getPriorityColor, getDueDateStatus, getGradeColor, cn } from '@/lib/utils'
+import { useAppStore } from '@/lib/app-store'
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -73,11 +74,12 @@ const statCards = [
 ]
 
 export default function DashboardPage() {
+  const { tasks } = useAppStore()
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
-  const activeTasks = mockTasks.filter((t) => t.status !== 'completed')
+  const activeTasks = tasks.filter((t) => t.status !== 'completed')
   const upcomingTasks = activeTasks
     .filter((t) => t.dueDate)
     .sort((a, b) => (a.dueDate!.getTime() - b.dueDate!.getTime()))

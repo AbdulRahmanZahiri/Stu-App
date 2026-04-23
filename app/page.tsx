@@ -5,9 +5,10 @@ import { motion } from 'framer-motion'
 import {
   Sparkles, BookOpen, CheckSquare, BarChart3, MessageSquare,
   GraduationCap, Headphones, ArrowRight, Zap, Star, Users,
-  FileText, CalendarDays, Upload, Brain,
+  FileText, CalendarDays, Upload, Brain, Crown, Check, Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 
 const features = [
   {
@@ -81,6 +82,7 @@ export default function LandingPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <a href="#pricing" className="hidden text-sm font-medium text-slate-500 hover:text-slate-900 sm:block">Pricing</a>
           <Link href="/login">
             <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
               Sign In
@@ -118,7 +120,7 @@ export default function LandingPage() {
             className="mb-6 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-white px-4 py-1.5 shadow-sm"
           >
             <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-medium text-violet-700">AI-Powered · Winter 2026 · Now in Beta</span>
+            <span className="text-xs font-medium text-violet-700">Winter 2026 · Now in Beta</span>
           </motion.div>
 
           <motion.h1
@@ -306,6 +308,110 @@ export default function LandingPage() {
                 <p className="text-sm leading-relaxed text-slate-500">{feature.description}</p>
               </motion.div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="py-24 px-4 bg-slate-50">
+        <div className="mx-auto max-w-4xl">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="mb-14 text-center"
+          >
+            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-violet-600">Pricing</p>
+            <h2 className="text-4xl font-extrabold text-slate-900">
+              Simple, transparent{' '}
+              <span className="text-gradient">pricing</span>
+            </h2>
+            <p className="mt-4 text-lg text-slate-500">Start free. Upgrade when you need the full power.</p>
+          </motion.div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            {/* Free */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="flex flex-col rounded-3xl border-2 border-slate-200 bg-white p-8 shadow-sm"
+            >
+              <p className="text-sm font-semibold uppercase tracking-widest text-slate-400">Free</p>
+              <div className="mt-3 flex items-end gap-1">
+                <span className="text-5xl font-extrabold text-slate-900">$0</span>
+                <span className="mb-1.5 text-slate-400">/month</span>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">Core tools every student needs</p>
+
+              <ul className="mt-8 flex-1 space-y-3">
+                {['Dashboard & overview', 'Course management', 'Task & deadline tracking', 'Calendar & grades', 'Notes & community'].map((f) => (
+                  <li key={f} className="flex items-center gap-2.5 text-sm text-slate-600">
+                    <Check className="h-4 w-4 shrink-0 text-slate-400" />
+                    {f}
+                  </li>
+                ))}
+                <li className="flex items-center gap-2.5 text-sm text-slate-400">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  AI Assistant <span className="ml-1 text-xs">(Pro only)</span>
+                </li>
+                <li className="flex items-center gap-2.5 text-sm text-slate-400">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  Audio Podcasts <span className="ml-1 text-xs">(Pro only)</span>
+                </li>
+              </ul>
+
+              <Link href="/onboarding" className="mt-8 block">
+                <Button variant="outline" className="w-full" size="lg">Get started free</Button>
+              </Link>
+            </motion.div>
+
+            {/* Pro */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="relative flex flex-col rounded-3xl bg-gradient-to-b from-violet-600 to-indigo-700 p-8 text-white shadow-xl"
+            >
+              <div className="pointer-events-none absolute inset-0 rounded-3xl bg-white/5" />
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                <span className="rounded-full bg-amber-400 px-4 py-1 text-xs font-bold text-amber-900 shadow">Most Popular</span>
+              </div>
+              <p className="relative text-sm font-semibold uppercase tracking-widest text-violet-200">Pro</p>
+              <div className="relative mt-3 flex items-end gap-1">
+                <span className="text-5xl font-extrabold">$9.99</span>
+                <span className="mb-1.5 text-violet-300">/month</span>
+              </div>
+              <p className="relative mt-1 text-sm text-violet-200">Full academic suite, no limits</p>
+
+              <ul className="relative mt-8 flex-1 space-y-3">
+                {[
+                  'Everything in Free',
+                  'Unlimited AI Assistant',
+                  'Audio Study Podcasts',
+                  'Academic Planner',
+                  'Syllabus AI parsing',
+                  'Priority support',
+                  'Early access to features',
+                ].map((f, i) => (
+                  <li key={f} className={`flex items-center gap-2.5 text-sm ${i === 0 ? 'font-semibold text-violet-100' : 'text-violet-100'}`}>
+                    <Check className="h-4 w-4 shrink-0 text-violet-300" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <Link href="/onboarding" className="relative mt-8 block">
+                <Button className="w-full bg-white text-violet-700 font-bold hover:bg-violet-50 shadow-lg" size="lg">
+                  <Crown className="mr-2 h-4 w-4" />
+                  Get Pro — $9.99/mo
+                </Button>
+              </Link>
+              <p className="relative mt-3 text-center text-xs text-violet-300">Cancel anytime · No hidden fees</p>
+            </motion.div>
           </div>
         </div>
       </section>

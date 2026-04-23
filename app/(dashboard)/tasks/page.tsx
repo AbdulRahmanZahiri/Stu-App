@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { mockTasks, mockCourses } from '@/lib/mock-data'
+import { useAppStore } from '@/lib/app-store'
 import { formatRelativeDate, getPriorityColor, getDueDateStatus, cn } from '@/lib/utils'
 import { useTaskNotifications } from '@/hooks/useTaskNotifications'
 import type { Task } from '@/lib/types'
@@ -60,7 +60,7 @@ export default function TasksPage() {
 
 function TasksPageContent() {
   const searchParams = useSearchParams()
-  const [tasks, setTasks] = useState<Task[]>(mockTasks)
+  const { tasks, courses, addTasks, updateTask, deleteTask: storeDeleteTask } = useAppStore()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
@@ -105,15 +105,14 @@ function TasksPageContent() {
     })
 
   function toggleComplete(id: string) {
-    setTasks((prev) => prev.map((t) =>
-      t.id === id
-        ? { ...t, status: t.status === 'completed' ? 'not_started' : 'completed', completedAt: t.status !== 'completed' ? new Date() : undefined }
-        : t
-    ))
+    const t = tasks.find((t) => t.id === id)
+    if (!t) return
+    const next = t.status === 'completed' ? 'not_started' : 'completed'
+    updateTask(id, { status: next, completedAt: next === 'completed' ? new Date() : undefined })
   }
 
   function deleteTask(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id))
+    storeDeleteTask(id)
   }
 
   function openAdd() {
@@ -137,11 +136,10 @@ function TasksPageContent() {
 
   function saveTask() {
     if (!form.title.trim()) return
-    const course = mockCourses.find((c) => c.id === form.courseId)
+    const course = courses.find((c) => c.id === form.courseId)
     const parsedDueDate = parseLocalDateTimeInputValue(form.dueDate)
     if (editTask) {
-      setTasks((prev) => prev.map((t) => t.id === editTask.id ? {
-        ...t,
+      updateTask(editTask.id, {
         title: form.title.trim(),
         courseId: form.courseId || undefined,
         courseCode: course?.code,
@@ -150,7 +148,7 @@ function TasksPageContent() {
         priority: form.priority,
         dueDate: parsedDueDate,
         estimatedHours: form.estimatedHours ? parseFloat(form.estimatedHours) : undefined,
-      } : t))
+      })
     } else {
       const task: Task = {
         id: `task-${Date.now()}`,
@@ -166,14 +164,14 @@ function TasksPageContent() {
         estimatedHours: form.estimatedHours ? parseFloat(form.estimatedHours) : undefined,
         tags: [],
       }
-      setTasks((prev) => [task, ...prev])
+      addTasks([task])
     }
     setShowAdd(false)
     setEditTask(null)
   }
 
   function clearCompleted() {
-    setTasks((prev) => prev.filter((t) => t.status !== 'completed'))
+    tasks.filter((t) => t.status === 'completed').forEach((t) => storeDeleteTask(t.id))
   }
 
   useEffect(() => {
@@ -341,7 +339,7 @@ function TasksPageContent() {
                   <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select course" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NO_COURSE_VALUE}>No course</SelectItem>
-                    {mockCourses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code}</SelectItem>)}
+                    {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

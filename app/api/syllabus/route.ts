@@ -3,15 +3,44 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const client = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
+const MAX_TEXT_LENGTH     = 120_000  // ~120 KB of raw syllabus text
+const PARSE_WINDOW        = 8_000    // chars sent to the model
+const MAX_FILENAME_LENGTH = 260
+
+function sanitizeText(str: unknown, maxLen: number): string {
+  if (typeof str !== 'string') return ''
+  return str.replace(/\x00/g, '').replace(/[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, maxLen)
+}
+
 export async function POST(req: NextRequest) {
+  // Block oversized bodies (>200 KB)
+  const contentLength = req.headers.get('content-length')
+  if (contentLength && parseInt(contentLength) > 204_800) {
+    return NextResponse.json({ error: 'Request too large' }, { status: 413 })
+  }
+
   try {
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
     }
 
-    const { text, fileName } = await req.json()
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
 
-    if (!text || text.trim().length < 50) {
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+
+    const { text: rawText, fileName: rawFileName } = body as Record<string, unknown>
+
+    const text     = sanitizeText(rawText, MAX_TEXT_LENGTH)
+    const fileName = sanitizeText(rawFileName, MAX_FILENAME_LENGTH)
+
+    if (text.trim().length < 50) {
       return NextResponse.json({ error: 'Syllabus text too short or empty' }, { status: 400 })
     }
 
@@ -30,7 +59,7 @@ export async function POST(req: NextRequest) {
 File: ${fileName}
 
 Content:
-${text.slice(0, 8000)}
+${text.slice(0, PARSE_WINDOW)}
 
 Required JSON format:
 {

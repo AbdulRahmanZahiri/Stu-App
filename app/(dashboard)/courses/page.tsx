@@ -14,9 +14,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { mockCourses } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
-import type { Course } from '@/lib/types'
+import { useAppStore } from '@/lib/app-store'
+import { toast } from 'sonner'
+import type { Course, Task } from '@/lib/types'
 
 const COURSE_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
 
@@ -39,7 +40,7 @@ interface ParsedSyllabus {
 }
 
 export default function CoursesPage() {
-  const [courses, setCourses] = useState(mockCourses)
+  const { courses, addTasks, updateCourse, addCourse: storeAddCourse } = useAppStore()
   const [uploadingCourse, setUploadingCourse] = useState<Course | null>(null)
   const [uploadState, setUploadState] = useState<UploadState>('idle')
   const [dragOver, setDragOver] = useState(false)
@@ -52,7 +53,7 @@ export default function CoursesPage() {
   const [newCourse, setNewCourse] = useState({ code: '', name: '', instructor: '', credits: '3', schedule: '', room: '', color: '#6366f1' })
   const fileRef = useRef<HTMLInputElement>(null)
 
-  function addCourse() {
+  function handleAddCourse() {
     if (!newCourse.code.trim() || !newCourse.name.trim()) return
     const course: Course = {
       id: `course-${Date.now()}`,
@@ -69,7 +70,7 @@ export default function CoursesPage() {
       status: 'active',
       syllabusUploaded: false,
     }
-    setCourses((p) => [...p, course])
+    storeAddCourse(course)
     setNewCourse({ code: '', name: '', instructor: '', credits: '3', schedule: '', room: '', color: '#6366f1' })
     setShowAddCourse(false)
   }
@@ -155,15 +156,40 @@ export default function CoursesPage() {
 
   function confirmSave() {
     if (!uploadingCourse || !parsed) return
-    setCourses((prev) => prev.map((c) =>
-      c.id === uploadingCourse.id
-        ? {
-            ...c,
-            syllabusUploaded: true,
-            instructor: parsed.instructor ?? c.instructor,
-          }
-        : c
-    ))
+
+    updateCourse(uploadingCourse.id, {
+      syllabusUploaded: true,
+      instructor: parsed.instructor ?? uploadingCourse.instructor,
+    })
+
+    const newTasks: Task[] = (parsed.keyDates ?? [])
+      .filter((kd) => kd.title && kd.date)
+      .map((kd) => ({
+        id: `syllabus-${uploadingCourse.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        studentId: 'student-001',
+        courseId: uploadingCourse.id,
+        title: kd.title,
+        type: (kd.title.toLowerCase().includes('exam') || kd.title.toLowerCase().includes('midterm') || kd.title.toLowerCase().includes('final')
+          ? 'exam'
+          : kd.title.toLowerCase().includes('quiz')
+          ? 'quiz'
+          : 'assignment') as Task['type'],
+        status: 'not_started' as Task['status'],
+        priority: 'medium' as Task['priority'],
+        dueDate: new Date(kd.date),
+        courseCode: uploadingCourse.code,
+        courseColor: uploadingCourse.color,
+        courseName: uploadingCourse.name,
+        tags: [],
+      }))
+
+    if (newTasks.length > 0) {
+      addTasks(newTasks)
+      toast.success(`Syllabus saved! Added ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} from ${uploadingCourse.code}`)
+    } else {
+      toast.success(`Syllabus saved for ${uploadingCourse.code}`)
+    }
+
     resetDialog()
   }
 
@@ -491,7 +517,7 @@ export default function CoursesPage() {
             </div>
             <div className="flex gap-2 pt-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowAddCourse(false)}>Cancel</Button>
-              <Button variant="gradient" size="sm" className="flex-1" onClick={addCourse} disabled={!newCourse.code.trim() || !newCourse.name.trim()}>
+              <Button variant="gradient" size="sm" className="flex-1" onClick={handleAddCourse} disabled={!newCourse.code.trim() || !newCourse.name.trim()}>
                 <Plus className="h-3.5 w-3.5" />Add Course
               </Button>
             </div>

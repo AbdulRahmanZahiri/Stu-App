@@ -11,9 +11,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { mockAudioItems, mockNotes } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/lib/app-store'
+import { ProGate } from '@/components/ui/pro-gate'
 import type { AudioStudyItem } from '@/lib/types'
 
 export default function AudioStudyPage() {
+  const { plan } = useAppStore()
   const [playing, setPlaying] = useState(false)
   const [items, setItems] = useState(mockAudioItems)
   const [activeItem, setActiveItem] = useState(mockAudioItems[0])
@@ -90,6 +93,16 @@ export default function AudioStudyPage() {
     } finally {
       setGenerating(false)
     }
+  }
+
+  if (plan === 'free') {
+    return (
+      <ProGate
+        feature="audio"
+        title="Audio Podcasts is a Pro Feature"
+        description="Turn any of your notes into a podcast-style audio summary — AI-generated scripts you can listen to while commuting, working out, or relaxing."
+      />
+    )
   }
 
   return (
