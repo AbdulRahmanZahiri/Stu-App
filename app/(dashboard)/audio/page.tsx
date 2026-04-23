@@ -106,7 +106,7 @@ export default function AudioStudyPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Audio Study Mode</h1>

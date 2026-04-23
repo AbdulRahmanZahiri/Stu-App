@@ -31,7 +31,7 @@ export default function GradesPage() {
   }))
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Grade Tracker</h1>

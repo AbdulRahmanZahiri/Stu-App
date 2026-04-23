@@ -21,6 +21,7 @@ import {
   Zap,
   Crown,
   Lock,
+  X,
 } from 'lucide-react'
 import { cn, getInitials } from '@/lib/utils'
 import { mockStudent } from '@/lib/mock-data'
@@ -64,9 +65,11 @@ const navItems: Array<{ group: string; items: NavItem[] }> = [
 interface SidebarProps {
   collapsed?: boolean
   onToggle?: () => void
+  mobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
-export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
   const { plan } = useAppStore()
 
@@ -74,7 +77,15 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
     <motion.aside
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="relative flex h-screen flex-col overflow-hidden bg-slate-950 text-white"
+      className={cn(
+        'flex h-screen flex-col overflow-hidden bg-slate-950 text-white',
+        // Desktop: relative, always visible
+        'lg:relative lg:translate-x-0',
+        // Mobile: fixed drawer, slides in/out
+        'fixed inset-y-0 left-0 z-50 lg:z-auto',
+        mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+        'transition-transform duration-300 ease-in-out lg:transition-none',
+      )}
       style={{ minWidth: collapsed ? 72 : 260 }}
     >
       {/* Gradient overlay */}
@@ -101,9 +112,17 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           </AnimatePresence>
         </Link>
 
+        {/* Mobile close button */}
+        <button
+          onClick={onMobileClose}
+          className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/40 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+        {/* Desktop collapse button */}
         <button
           onClick={onToggle}
-          className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+          className="ml-auto hidden h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/40 transition-colors hover:bg-white/10 hover:text-white lg:flex"
         >
           {collapsed ? (
             <ChevronRight className="h-3.5 w-3.5" />

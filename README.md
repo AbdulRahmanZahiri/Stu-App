@@ -39,7 +39,7 @@ ScholarFlow is a modern, production-grade SaaS-style student portal that helps u
 | Push Notifications | 🔲 TODO |
 | Mobile App | 🔲 Future |
 
----
+
 
 ## Tech Stack
 

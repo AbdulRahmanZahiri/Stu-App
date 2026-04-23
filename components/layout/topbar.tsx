@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Search, Plus, ChevronDown } from 'lucide-react'
+import { Bell, Search, Plus, ChevronDown, Menu } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +19,11 @@ import { useAuth } from '@/lib/auth-context'
 import { format } from 'date-fns'
 import Link from 'next/link'
 
-export function Topbar() {
+interface TopbarProps {
+  onMobileMenuClick?: () => void
+}
+
+export function Topbar({ onMobileMenuClick }: TopbarProps) {
   const router = useRouter()
   const { profile, signOut } = useAuth()
   const now = new Date()
@@ -42,7 +46,15 @@ export function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-slate-100 bg-white/80 px-6 backdrop-blur-sm">
+    <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-slate-100 bg-white/80 px-4 backdrop-blur-sm sm:gap-4 sm:px-6">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMobileMenuClick}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
       <div className="hidden sm:block">
         <p className="text-xs font-medium text-slate-400">
           {format(now, 'EEEE, MMMM d, yyyy')}

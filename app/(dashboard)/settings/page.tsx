@@ -141,7 +141,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">Manage your profile, preferences, and account settings</p>

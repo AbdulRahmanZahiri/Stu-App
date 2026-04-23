@@ -88,7 +88,7 @@ export default function DashboardPage() {
   const todayTasks = activeTasks.slice(0, 4)
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -8 }}
@@ -119,7 +119,7 @@ export default function DashboardPage() {
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4"
+        className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
       >
         {statCards.map((stat) => (
           <motion.div key={stat.title} variants={itemVariants}>

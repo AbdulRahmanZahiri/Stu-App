@@ -49,7 +49,7 @@ function parseLocalDateTimeInputValue(value: string): Date | undefined {
 export default function TasksPage() {
   return (
     <Suspense fallback={
-      <div className="p-6 lg:p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <p className="text-sm text-slate-500">Loading tasks...</p>
       </div>
     }>
@@ -191,7 +191,7 @@ function TasksPageContent() {
   const progress = total > 0 ? Math.round((completed / total) * 100) : 0
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-8 flex items-start justify-between">
         <div>

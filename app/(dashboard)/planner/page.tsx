@@ -28,7 +28,7 @@ export default function PlannerPage() {
   const progressPct = Math.round((totalCompleted / totalRequired) * 100)
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex items-start justify-between">
         <div>
