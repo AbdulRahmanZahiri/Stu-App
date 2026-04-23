@@ -160,6 +160,9 @@ export default function CoursesPage() {
     updateCourse(uploadingCourse.id, {
       syllabusUploaded: true,
       instructor: parsed.instructor ?? uploadingCourse.instructor,
+      gradingBreakdown: parsed.gradingBreakdown?.length
+        ? parsed.gradingBreakdown
+        : undefined,
     })
 
     const newTasks: Task[] = (parsed.keyDates ?? [])

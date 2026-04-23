@@ -38,6 +38,7 @@ export interface Course {
   status: 'active' | 'completed' | 'dropped'
   schedule?: string
   room?: string
+  gradingBreakdown?: { name: string; weight: number }[]
 }
 
 export interface Syllabus {
