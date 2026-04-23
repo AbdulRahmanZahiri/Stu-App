@@ -1,7 +1,11 @@
 import Groq from 'groq-sdk'
 import { NextRequest, NextResponse } from 'next/server'
 
-const client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+let client: Groq | null = null
+function getClient(): Groq {
+  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+  return client
+}
 
 const SYSTEM_PROMPT = `You are an AI academic assistant for ScholarFlow, a student portal for university students.
 You help students with their coursework, study plans, summaries, flashcards, and academic questions.
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
       return { role: role as 'user' | 'assistant', content }
     })
 
-    const response = await client.chat.completions.create({
+    const response = await getClient().chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       max_tokens: 1024,
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],

@@ -1,7 +1,11 @@
 import Groq from 'groq-sdk'
 import { NextRequest, NextResponse } from 'next/server'
 
-const client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+let client: Groq | null = null
+function getClient(): Groq {
+  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
+  return client
+}
 
 const MAX_TEXT_LENGTH     = 120_000  // ~120 KB of raw syllabus text
 const PARSE_WINDOW        = 8_000    // chars sent to the model
@@ -44,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Syllabus text too short or empty' }, { status: 400 })
     }
 
-    const response = await client.chat.completions.create({
+    const response = await getClient().chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       max_tokens: 2048,
       messages: [
