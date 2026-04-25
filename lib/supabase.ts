@@ -1,12 +1,24 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-// Fallback values prevent createBrowserClient from throwing at build time
-// when env vars aren't set. Auth calls will fail gracefully at runtime.
-export const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL    || 'https://placeholder.supabase.co',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
-)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+// Lazy singleton — only created when first accessed in the browser
+let _client: ReturnType<typeof createBrowserClient> | null = null
+
+function getClient() {
+  if (!_client) {
+    _client = createBrowserClient(supabaseUrl, supabaseAnonKey)
+  }
+  return _client
+}
+
+export const supabase = new Proxy({} as ReturnType<typeof createBrowserClient>, {
+  get(_target, prop) {
+    return (getClient() as unknown as Record<string, unknown>)[prop as string]
+  },
+})
 
 export function isSupabaseReady() {
-  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  return !!(supabaseUrl && supabaseAnonKey)
 }
