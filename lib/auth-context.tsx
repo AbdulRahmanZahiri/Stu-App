@@ -12,6 +12,7 @@ export type StudentProfile = {
   year_of_study?: number | null
   university_name?: string | null
   gpa?: number | null
+  is_admin?: boolean | null
 }
 
 type AuthContextType = {
@@ -36,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('student_profiles')
-      .select('id, name, email, major, year_of_study, university_name, gpa')
+      .select('id, name, email, major, year_of_study, university_name, gpa, is_admin')
       .eq('id', userId)
       .single()
     setProfile(data ?? null)

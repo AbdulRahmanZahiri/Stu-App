@@ -101,14 +101,16 @@ export async function middleware(request: NextRequest) {
       },
     })
 
-    let isRealUser = false
+    let user = null
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      isRealUser = !!user?.email
+      const { data } = await supabase.auth.getUser()
+      user = data.user
     } catch {
       // Supabase unreachable (project paused, offline, etc.) — treat as unauthenticated
       // and let the request through so the UI can show a meaningful error instead of crashing.
     }
+
+    const isRealUser = !!user?.email
 
     const isPublicPath =
       pathname === '/' ||
@@ -128,6 +130,29 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
+    }
+
+    // ── Layer 1: Admin route guard ────────────────────────────────────────────
+    // Block /admin for anyone who isn't an admin before the page even loads.
+    if (pathname.startsWith('/admin') && isRealUser && user) {
+      try {
+        const { data: profile } = await supabase
+          .from('student_profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single()
+
+        if (!profile?.is_admin) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/dashboard'
+          return NextResponse.redirect(url)
+        }
+      } catch {
+        // DB unreachable — deny access to be safe
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        return NextResponse.redirect(url)
+      }
     }
   }
 

@@ -151,17 +151,7 @@ export default function NotesPage() {
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6 rounded-2xl border border-amber-100 bg-amber-50 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100">
-            <BookMarked className="h-4 w-4 text-amber-600" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Community Library Notice</p>
-            <p className="mt-0.5 text-xs text-amber-700">Shared notes are uploaded by students. Always verify critical info with official materials.</p>
-          </div>
-        </div>
-      </motion.div>
+
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="relative flex-1 max-w-sm">
