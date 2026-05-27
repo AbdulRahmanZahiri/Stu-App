@@ -101,8 +101,14 @@ export async function middleware(request: NextRequest) {
       },
     })
 
-    const { data: { user } } = await supabase.auth.getUser()
-    const isRealUser = !!user?.email
+    let isRealUser = false
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      isRealUser = !!user?.email
+    } catch {
+      // Supabase unreachable (project paused, offline, etc.) — treat as unauthenticated
+      // and let the request through so the UI can show a meaningful error instead of crashing.
+    }
 
     const isPublicPath =
       pathname === '/' ||
