@@ -4,21 +4,19 @@ import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   Sparkles, Send, BookOpen, FileText, BrainCircuit,
-  ListChecks, Zap, RefreshCcw, Copy, ThumbsUp, AlertCircle,
+  ListChecks, Zap, Copy, ThumbsUp, AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { mockStudent } from '@/lib/mock-data'
 import { getInitials, cn } from '@/lib/utils'
-import { useAppStore } from '@/lib/app-store'
-import { ProGate } from '@/components/ui/pro-gate'
+import { useAuth } from '@/lib/auth-context'
 import type { AIMessage } from '@/lib/types'
 
 const quickPrompts = [
-  { icon: FileText, label: 'Summarize COMP 2007 notes', color: 'text-violet-600' },
-  { icon: BrainCircuit, label: 'Create a study plan for finals', color: 'text-indigo-600' },
+  { icon: FileText, label: 'Summarize COMP 2007 notes', color: 'text-emerald-600' },
+  { icon: BrainCircuit, label: 'Create a study plan for finals', color: 'text-green-600' },
   { icon: ListChecks, label: 'Generate quiz questions for Data Structures', color: 'text-blue-600' },
   { icon: BookOpen, label: 'Explain eigenvalues simply', color: 'text-sky-600' },
   { icon: Zap, label: 'Create MATH 2050 flashcards', color: 'text-amber-600' },
@@ -66,7 +64,7 @@ function MessageContent({ text }: { text: string }) {
     } else if (line.startsWith('## ') || line.startsWith('# ')) {
       elements.push(<p key={i} className="font-bold text-slate-900 text-base mt-1">{line.replace(/^#+\s/, '')}</p>)
     } else if (line.startsWith('> ')) {
-      elements.push(<p key={i} className="border-l-2 border-violet-300 pl-3 text-slate-500 italic my-0.5">{line.slice(2)}</p>)
+      elements.push(<p key={i} className="border-l-2 border-emerald-300 pl-3 text-slate-500 italic my-0.5">{line.slice(2)}</p>)
     } else if (line === '---') {
       elements.push(<hr key={i} className="border-slate-100 my-2" />)
     } else if (/^\d+\. /.test(line)) {
@@ -95,23 +93,14 @@ function renderBold(text: string): React.ReactNode {
 }
 
 export default function AIAssistantPage() {
-  const { plan } = useAppStore()
+  const { profile } = useAuth()
   const [messages, setMessages] = useState<AIMessage[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [likedMessages, setLikedMessages] = useState<Set<string>>(() => new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
-
-  if (plan === 'free') {
-    return (
-      <ProGate
-        feature="ai"
-        title="AI Assistant is a Pro Feature"
-        description="Get unlimited access to your AI academic assistant — ask for summaries, study plans, flashcards, essay help, and more. Powered by Llama 3.3 70B."
-      />
-    )
-  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -122,7 +111,7 @@ export default function AIAssistantPage() {
     if (!content || loading) return
 
     const userMsg: AIMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${crypto.randomUUID()}`,
       role: 'user',
       content,
       timestamp: new Date(),
@@ -153,7 +142,7 @@ export default function AIAssistantPage() {
       setMessages((prev) => [
         ...prev,
         {
-          id: `msg-${Date.now()}-ai`,
+          id: `msg-${crypto.randomUUID()}-ai`,
           role: 'assistant' as const,
           content: data.content,
           timestamp: new Date(),
@@ -181,7 +170,7 @@ export default function AIAssistantPage() {
       {/* Header */}
       <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 shadow-md">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 shadow-md">
             <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -209,7 +198,7 @@ export default function AIAssistantPage() {
                     key={p.label}
                     onClick={() => sendMessage(p.label)}
                     disabled={loading}
-                    className="flex items-center gap-2 rounded-xl border border-slate-100 bg-white p-3 text-left text-xs font-medium text-slate-600 shadow-sm transition-all hover:border-violet-200 hover:shadow-md hover:-translate-y-0.5 disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-xl border border-slate-100 bg-white p-3 text-left text-xs font-medium text-slate-600 shadow-sm transition-all hover:border-emerald-200 hover:shadow-md hover:-translate-y-0.5 disabled:opacity-50"
                   >
                     <p.icon className={`h-4 w-4 shrink-0 ${p.color}`} />
                     {p.label}
@@ -231,10 +220,10 @@ export default function AIAssistantPage() {
                 <AvatarFallback className={cn(
                   'text-[10px]',
                   msg.role === 'user'
-                    ? 'bg-gradient-to-br from-violet-500 to-indigo-500 text-white'
+                    ? 'bg-gradient-to-br from-emerald-500 to-green-500 text-white'
                     : 'bg-gradient-to-br from-amber-400 to-orange-500 text-white'
                 )}>
-                  {msg.role === 'user' ? getInitials(mockStudent.name) : 'AI'}
+                  {msg.role === 'user' ? getInitials(profile?.name || 'Student') : 'AI'}
                 </AvatarFallback>
               </Avatar>
 
@@ -242,7 +231,7 @@ export default function AIAssistantPage() {
                 <div className={cn(
                   'rounded-2xl px-4 py-3 text-sm leading-relaxed',
                   msg.role === 'user'
-                    ? 'bg-gradient-to-br from-violet-600 to-indigo-600 text-white rounded-tr-sm'
+                    ? 'bg-gradient-to-br from-emerald-600 to-green-600 text-white rounded-tr-sm'
                     : 'bg-white border border-slate-100 text-slate-800 shadow-sm rounded-tl-sm'
                 )}>
                   {msg.role === 'assistant'
@@ -253,7 +242,9 @@ export default function AIAssistantPage() {
 
                 <div className={cn('flex items-center gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
                   <span className="text-[10px] text-slate-400">
-                    {msg.timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    {msg.id === 'welcome'
+                      ? 'Ready'
+                      : msg.timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                   {msg.role === 'assistant' && msg.id !== 'welcome' && (
                     <div className="flex items-center gap-1">
@@ -261,7 +252,18 @@ export default function AIAssistantPage() {
                         <Copy className="h-3 w-3" />
                       </button>
                       {copied === msg.id && <span className="text-[10px] text-emerald-500">Copied!</span>}
-                      <button className="rounded p-0.5 text-slate-300 hover:text-emerald-500"><ThumbsUp className="h-3 w-3" /></button>
+                      <button
+                        onClick={() => setLikedMessages((current) => {
+                          const next = new Set(current)
+                          if (next.has(msg.id)) next.delete(msg.id)
+                          else next.add(msg.id)
+                          return next
+                        })}
+                        className={cn('rounded p-0.5 hover:text-emerald-500', likedMessages.has(msg.id) ? 'text-emerald-500' : 'text-slate-300')}
+                        aria-label={likedMessages.has(msg.id) ? 'Remove positive feedback' : 'Mark response helpful'}
+                      >
+                        <ThumbsUp className="h-3 w-3" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -276,9 +278,9 @@ export default function AIAssistantPage() {
                 <AvatarFallback className="bg-gradient-to-br from-amber-400 to-orange-500 text-white text-[10px]">AI</AvatarFallback>
               </Avatar>
               <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm bg-white border border-slate-100 px-4 py-3 shadow-sm">
-                <div className="h-2 w-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="h-2 w-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="h-2 w-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </motion.div>
           )}
@@ -298,7 +300,7 @@ export default function AIAssistantPage() {
       {/* Input box */}
       <div className="shrink-0 border-t border-slate-100 bg-white p-4 md:px-8">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 focus-within:border-violet-300 focus-within:bg-white transition-all">
+          <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 focus-within:border-emerald-300 focus-within:bg-white transition-all">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -313,7 +315,7 @@ export default function AIAssistantPage() {
             />
             <Button
               size="icon"
-              className="h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600"
+              className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600"
               onClick={() => sendMessage()}
               disabled={!input.trim() || loading}
             >

@@ -1,23 +1,25 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   FileText, Search, Upload, Eye, Download,
-  Plus, Shield, Archive, Users, Clock, X,
-  BookMarked, Sparkles, Loader2, Check, AlertCircle,
+  Plus, Shield, Archive, Users, Clock,
+  Sparkles, Loader2, Check, AlertCircle,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { mockNotes, mockCourses } from '@/lib/mock-data'
-import { formatDate, getInitials, cn } from '@/lib/utils'
+import { useAppStore } from '@/lib/app-store'
+import { useAuth } from '@/lib/auth-context'
+import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { getInitials, cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { Note } from '@/lib/types'
 
@@ -29,10 +31,11 @@ const labelConfig = {
 }
 
 export default function NotesPage() {
-  const [notes, setNotes] = useState(mockNotes)
+  const { notes, courses, addNote } = useAppStore()
+  const { user, profile } = useAuth()
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('all')
-  const [viewNote, setViewNote] = useState<typeof mockNotes[0] | null>(null)
+  const [viewNote, setViewNote] = useState<Note | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [aiSummary, setAiSummary] = useState<{ noteId: string; content: string } | null>(null)
@@ -41,6 +44,7 @@ export default function NotesPage() {
 
   const [newNote, setNewNote] = useState({ title: '', content: '', courseId: '', tags: '' })
   const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const filtered = notes.filter((n) => {
@@ -48,7 +52,7 @@ export default function NotesPage() {
       n.title.toLowerCase().includes(search.toLowerCase()) ||
       n.courseCode?.toLowerCase().includes(search.toLowerCase()) ||
       n.tags?.some((t) => t.toLowerCase().includes(search.toLowerCase()))
-    if (tab === 'my') return matchSearch && n.authorId === 'student-001'
+    if (tab === 'my') return matchSearch && n.authorId === (user?.id ?? 'student-001')
     if (tab === 'shared') return matchSearch && n.type === 'shared'
     if (tab === 'verified') return matchSearch && n.isVerified
     return matchSearch
@@ -56,11 +60,11 @@ export default function NotesPage() {
 
   function createNote() {
     if (!newNote.title.trim() || !newNote.content.trim()) return
-    const course = mockCourses.find((c) => c.id === newNote.courseId)
-    const note: typeof mockNotes[0] = {
-      id: `note-${Date.now()}`,
-      authorId: 'student-001',
-      authorName: 'Alex Chen',
+    const course = courses.find((c) => c.id === newNote.courseId)
+    const note: Note = {
+      id: crypto.randomUUID(),
+      authorId: user?.id ?? 'student-001',
+      authorName: profile?.name ?? 'Demo Student',
       courseId: newNote.courseId || undefined,
       courseCode: course?.code,
       title: newNote.title.trim(),
@@ -75,23 +79,34 @@ export default function NotesPage() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }
-    setNotes((prev) => [note, ...prev])
+    addNote(note)
     setNewNote({ title: '', content: '', courseId: '', tags: '' })
     setShowCreate(false)
   }
 
-  function uploadNote() {
+  async function uploadNote() {
     if (!uploadFile || !newNote.title.trim()) return
-    const course = mockCourses.find((c) => c.id === newNote.courseId)
-    const note: typeof mockNotes[0] = {
-      id: `note-${Date.now()}`,
-      authorId: 'student-001',
-      authorName: 'Alex Chen',
+    const course = courses.find((c) => c.id === newNote.courseId)
+    setUploading(true)
+    let content = `Uploaded file: ${uploadFile.name}`
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      const response = await fetch('/api/extract-pdf', { method: 'POST', body: formData })
+      const result = await response.json()
+      if (response.ok && typeof result.text === 'string') content = result.text
+    } catch {
+      // The original file is still stored even when text extraction is unavailable.
+    }
+    const note: Note = {
+      id: crypto.randomUUID(),
+      authorId: user?.id ?? 'student-001',
+      authorName: profile?.name ?? 'Demo Student',
       courseId: newNote.courseId || undefined,
       courseCode: course?.code,
       title: newNote.title.trim(),
-      content: `Uploaded file: ${uploadFile.name}`,
-      excerpt: `Uploaded from ${uploadFile.name}`,
+      content,
+      excerpt: content.slice(0, 160),
       type: 'personal',
       tags: newNote.tags.split(',').map((t) => t.trim()).filter(Boolean),
       status: 'draft',
@@ -101,13 +116,34 @@ export default function NotesPage() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }
-    setNotes((prev) => [note, ...prev])
+    addNote(note, uploadFile)
     setUploadFile(null)
     setNewNote({ title: '', content: '', courseId: '', tags: '' })
     setShowUpload(false)
+    setUploading(false)
   }
 
-  async function generateAISummary(note: typeof mockNotes[0]) {
+  async function downloadNote(note: Note) {
+    if (note.fileUrl) {
+      const { data, error } = await supabase.storage.from('notes').createSignedUrl(note.fileUrl, 60)
+      if (error || !data?.signedUrl) {
+        toast.error(error?.message ?? 'Could not create a download link')
+        return
+      }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    const blob = new Blob([note.content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${note.title.replace(/[^a-z0-9-_]+/gi, '-') || 'note'}.txt`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function generateAISummary(note: Note) {
     setLoadingSummary(note.id)
     setSummaryError(null)
     try {
@@ -125,7 +161,7 @@ export default function NotesPage() {
       if (!res.ok) throw new Error(data.error || 'Failed')
       setAiSummary({ noteId: note.id, content: data.content })
       setViewNote(note)
-    } catch (err) {
+    } catch {
       setSummaryError(note.id)
     } finally {
       setLoadingSummary(null)
@@ -174,13 +210,13 @@ export default function NotesPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           onClick={() => { setShowCreate(true); setNewNote({ title: '', content: '', courseId: '', tags: '' }) }}
-          className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/50 p-8 text-center cursor-pointer transition-all hover:border-violet-400 hover:bg-violet-50"
+          className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/50 p-8 text-center cursor-pointer transition-all hover:border-emerald-400 hover:bg-emerald-50"
         >
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100">
-            <Plus className="h-6 w-6 text-violet-600" />
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
+            <Plus className="h-6 w-6 text-emerald-600" />
           </div>
-          <p className="text-sm font-semibold text-violet-700">Add New Note</p>
-          <p className="mt-1 text-xs text-violet-500">Create or upload a note</p>
+          <p className="text-sm font-semibold text-emerald-700">Add New Note</p>
+          <p className="mt-1 text-xs text-emerald-500">Create or upload a note</p>
         </motion.div>
 
         {filtered.map((note, i) => (
@@ -212,7 +248,7 @@ export default function NotesPage() {
               <DialogHeader>
                 <DialogTitle>{viewNote.title}</DialogTitle>
                 <DialogDescription>
-                  {viewNote.courseCode && <span className="font-semibold text-violet-600">{viewNote.courseCode} · </span>}
+                  {viewNote.courseCode && <span className="font-semibold text-emerald-600">{viewNote.courseCode} · </span>}
                   by {viewNote.authorName}
                 </DialogDescription>
               </DialogHeader>
@@ -228,12 +264,12 @@ export default function NotesPage() {
 
                 {/* AI Summary section */}
                 {aiSummary?.noteId === viewNote.id && (
-                  <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <Sparkles className="h-4 w-4 text-violet-600" />
-                      <p className="text-sm font-semibold text-violet-800">AI Summary</p>
+                      <Sparkles className="h-4 w-4 text-emerald-600" />
+                      <p className="text-sm font-semibold text-emerald-800">AI Summary</p>
                     </div>
-                    <p className="text-sm text-violet-700 whitespace-pre-wrap">{aiSummary.content}</p>
+                    <p className="text-sm text-emerald-700 whitespace-pre-wrap">{aiSummary.content}</p>
                   </div>
                 )}
 
@@ -248,7 +284,7 @@ export default function NotesPage() {
                     {loadingSummary === viewNote.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                     {aiSummary?.noteId === viewNote.id ? 'Regenerate Summary' : 'AI Summary'}
                   </Button>
-                  <Button variant="outline" size="sm" className="gap-1.5">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadNote(viewNote)}>
                     <Download className="h-3.5 w-3.5" />
                     Download
                   </Button>
@@ -273,7 +309,7 @@ export default function NotesPage() {
               <Select value={newNote.courseId} onValueChange={(v) => setNewNote((p) => ({ ...p, courseId: v }))}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Select course (optional)" /></SelectTrigger>
                 <SelectContent>
-                  {mockCourses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}</SelectItem>)}
+                  {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -304,7 +340,7 @@ export default function NotesPage() {
           <div className="space-y-4 mt-2">
             <div
               onClick={() => fileRef.current?.click()}
-              className={cn('flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 cursor-pointer transition-all', uploadFile ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50')}
+              className={cn('flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 cursor-pointer transition-all', uploadFile ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50')}
             >
               {uploadFile ? (
                 <>
@@ -329,15 +365,15 @@ export default function NotesPage() {
               <Select value={newNote.courseId} onValueChange={(v) => setNewNote((p) => ({ ...p, courseId: v }))}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Select course (optional)" /></SelectTrigger>
                 <SelectContent>
-                  {mockCourses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code}</SelectItem>)}
+                  {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex gap-2 pt-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowUpload(false)}>Cancel</Button>
-              <Button variant="gradient" size="sm" className="flex-1" onClick={uploadNote} disabled={!uploadFile || !newNote.title.trim()}>
-                <Upload className="h-3.5 w-3.5" />
-                Upload Note
+              <Button variant="gradient" size="sm" className="flex-1" onClick={uploadNote} disabled={!uploadFile || !newNote.title.trim() || uploading}>
+                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                {uploading ? 'Uploading...' : 'Upload Note'}
               </Button>
             </div>
           </div>
@@ -348,7 +384,7 @@ export default function NotesPage() {
 }
 
 function NoteCard({ note, onView, onAISummary, loadingSummary, summaryError }: {
-  note: typeof mockNotes[0]
+  note: Note
   onView: () => void
   onAISummary: () => void
   loadingSummary: boolean
@@ -362,8 +398,8 @@ function NoteCard({ note, onView, onAISummary, loadingSummary, summaryError }: {
     <Card hover className="group h-full">
       <CardContent className="flex h-full flex-col p-5">
         <div className="mb-3 flex items-start justify-between gap-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50">
-            <FileText className="h-4 w-4 text-violet-600" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
+            <FileText className="h-4 w-4 text-emerald-600" />
           </div>
           <div className={cn('flex items-center gap-1 rounded-full border px-2 py-0.5', config.bg, config.border)}>
             <LabelIcon className={cn('h-3 w-3', config.text)} />
@@ -371,19 +407,19 @@ function NoteCard({ note, onView, onAISummary, loadingSummary, summaryError }: {
           </div>
         </div>
         <div className="flex-1">
-          {note.courseCode && <p className="mb-1 text-[11px] font-bold text-violet-600">{note.courseCode}</p>}
+          {note.courseCode && <p className="mb-1 text-[11px] font-bold text-emerald-600">{note.courseCode}</p>}
           <h3 className="mb-1.5 text-sm font-semibold leading-snug text-slate-900">{note.title}</h3>
           {note.excerpt && <p className="text-xs leading-relaxed text-slate-500 line-clamp-2">{note.excerpt}</p>}
         </div>
         {note.tags && note.tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {note.tags.slice(0, 3).map((tag) => <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{tag}</span>)}
+            {note.tags.slice(0, 3).map((tag: string) => <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{tag}</span>)}
           </div>
         )}
         <div className="mt-3 flex items-center justify-between border-t border-slate-50 pt-3">
           <div className="flex items-center gap-2">
             <Avatar className="h-5 w-5">
-              <AvatarFallback className="text-[8px] bg-gradient-to-br from-violet-400 to-indigo-400 text-white">{getInitials(note.authorName)}</AvatarFallback>
+              <AvatarFallback className="text-[8px] bg-gradient-to-br from-emerald-400 to-green-400 text-white">{getInitials(note.authorName)}</AvatarFallback>
             </Avatar>
             <span className="text-[10px] text-slate-400">{note.authorName}</span>
           </div>

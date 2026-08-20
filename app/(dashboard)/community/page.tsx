@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageSquare, Send, Users, Hash, Plus, Search,
@@ -86,8 +86,6 @@ const DEFAULT_ROOMS: Array<Pick<RoomRow, 'name' | 'type' | 'description' | 'cour
   },
 ]
 
-const DISPLAY_NAME_KEY = 'sf-display-name'
-
 function mapRoom(row: RoomRow, memberCount: number): ChatRoom {
   return {
     id: row.id,
@@ -122,17 +120,6 @@ function getErrorMessage(error: unknown): string {
   return 'Something went wrong while connecting to chat.'
 }
 
-function getOrCreateDisplayName(userId: string): string {
-  const stored = localStorage.getItem(DISPLAY_NAME_KEY)
-  if (stored && stored.trim()) {
-    return stored.trim()
-  }
-
-  const generated = `Student-${userId.slice(0, 6)}`
-  localStorage.setItem(DISPLAY_NAME_KEY, generated)
-  return generated
-}
-
 export default function CommunityPage() {
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
@@ -145,9 +132,15 @@ export default function CommunityPage() {
   const [loadingRooms, setLoadingRooms] = useState(true)
   const [chatMode, setChatMode] = useState<'realtime' | 'demo'>('demo')
   const [chatError, setChatError] = useState<string | null>(null)
-  const [authUserId, setAuthUserId] = useState<string | null>(null)
-  const [currentUser, setCurrentUser] = useState({ id: '', name: 'Student' })
   const { user, profile } = useAuth()
+  const authUserId = user?.id ?? null
+  const currentUser = {
+    id: user?.id ?? '',
+    name: profile?.name?.trim()
+      || user?.user_metadata?.full_name
+      || user?.email?.split('@')[0]
+      || (user ? `Student-${user.id.slice(0, 6)}` : 'Student'),
+  }
 
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -161,11 +154,11 @@ export default function CommunityPage() {
   })
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null
-  const roomMessages = activeRoom
+  const roomMessages = useMemo(() => activeRoomId
     ? allMessages
-      .filter((m) => m.roomId === activeRoom.id)
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    : []
+      .filter((message) => message.roomId === activeRoomId)
+      .sort((first, second) => first.createdAt.getTime() - second.createdAt.getTime())
+    : [], [activeRoomId, allMessages])
 
   const filteredRooms = rooms.filter((r) => !search || r.name.toLowerCase().includes(search.toLowerCase()))
 
@@ -271,19 +264,6 @@ export default function CommunityPage() {
       await fetchMessages(nextActiveRoomId)
     }
   }, [ensureMembership, fetchMessages])
-
-  // Set current user from auth context
-  useEffect(() => {
-    if (user && profile) {
-      setCurrentUser({ id: user.id, name: profile.name })
-      setAuthUserId(user.id)
-    } else if (user) {
-      const stored = localStorage.getItem(DISPLAY_NAME_KEY)
-      const name = stored?.trim() || `Student-${user.id.slice(0, 6)}`
-      setCurrentUser({ id: user.id, name })
-      setAuthUserId(user.id)
-    }
-  }, [user, profile])
 
   useEffect(() => {
     if (!authUserId) return
@@ -414,7 +394,7 @@ export default function CommunityPage() {
 
     if (chatMode === 'demo' || !supabase || !authUserId) {
       const newMessage: ChatMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${crypto.randomUUID()}`,
         roomId: activeRoom.id,
         senderId: currentUser.id,
         senderName: currentUser.name,
@@ -591,7 +571,7 @@ export default function CommunityPage() {
                 onClick={() => setActiveRoomId(room.id)}
                 className={cn(
                   'mb-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all',
-                  isActive ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-50',
+                  isActive ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50',
                 )}
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: (room.color ?? '#6366f1') + '20' }}>
@@ -602,7 +582,7 @@ export default function CommunityPage() {
                   <p className="truncate text-[10px] text-slate-400">{room.memberCount} members</p>
                 </div>
                 {(room.unreadCount ?? 0) > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-500 px-1.5 text-[10px] font-bold text-white">
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white">
                     {room.unreadCount}
                   </span>
                 )}
@@ -618,7 +598,7 @@ export default function CommunityPage() {
         <div className="border-t border-slate-100 p-3">
           <div className="flex items-center gap-2">
             <Avatar className="h-7 w-7">
-              <AvatarFallback className="bg-gradient-to-br from-violet-500 to-indigo-500 text-[10px] text-white">
+              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-green-500 text-[10px] text-white">
                 {getInitials(currentUser.name)}
               </AvatarFallback>
             </Avatar>
@@ -690,7 +670,7 @@ export default function CommunityPage() {
 
                         <div className={cn('flex max-w-[65%] flex-col gap-1', isMe && 'items-end')}>
                           {showAvatar && !isMe && <p className="px-1 text-[11px] font-semibold text-slate-500">{msg.senderName}</p>}
-                          <div className={cn('rounded-2xl px-4 py-2.5 text-sm leading-relaxed', isMe ? 'rounded-br-sm bg-gradient-to-br from-violet-600 to-indigo-600 text-white' : 'rounded-bl-sm border border-slate-100 bg-white text-slate-800 shadow-sm')}>
+                          <div className={cn('rounded-2xl px-4 py-2.5 text-sm leading-relaxed', isMe ? 'rounded-br-sm bg-gradient-to-br from-emerald-600 to-green-600 text-white' : 'rounded-bl-sm border border-slate-100 bg-white text-slate-800 shadow-sm')}>
                             {msg.content}
                           </div>
                           <p className={cn('px-1 text-[10px] text-slate-400', isMe && 'text-right')}>
@@ -734,7 +714,7 @@ export default function CommunityPage() {
                 }}
               />
 
-              <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-all focus-within:border-violet-300 focus-within:bg-white">
+              <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-all focus-within:border-emerald-300 focus-within:bg-white">
                 <Textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -752,10 +732,10 @@ export default function CommunityPage() {
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-amber-500" onClick={() => setShowEmoji((prev) => !prev)} title="Emoji">
                     <Smile className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-violet-500" onClick={() => fileRef.current?.click()} title="Attach file">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-emerald-500" onClick={() => fileRef.current?.click()} title="Attach file">
                     <Paperclip className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" className="h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 text-white" onClick={() => void sendMessage()} disabled={!input.trim()}>
+                  <Button size="icon" className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 text-white" onClick={() => void sendMessage()} disabled={!input.trim()}>
                     <Send className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -801,7 +781,7 @@ export default function CommunityPage() {
               <Label className="mb-1.5 block text-xs font-medium">Color</Label>
               <div className="flex gap-2">
                 {ROOM_COLORS.map((color) => (
-                  <button key={color} onClick={() => setNewRoom((prev) => ({ ...prev, color }))} className={cn('h-7 w-7 rounded-full transition-all', newRoom.color === color ? 'scale-110 ring-2 ring-violet-500 ring-offset-2' : 'hover:scale-105')} style={{ backgroundColor: color }} />
+                  <button key={color} onClick={() => setNewRoom((prev) => ({ ...prev, color }))} className={cn('h-7 w-7 rounded-full transition-all', newRoom.color === color ? 'scale-110 ring-2 ring-emerald-500 ring-offset-2' : 'hover:scale-105')} style={{ backgroundColor: color }} />
                 ))}
               </div>
             </div>

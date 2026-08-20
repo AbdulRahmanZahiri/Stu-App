@@ -25,7 +25,7 @@ const Slider = React.forwardRef<HTMLInputElement, SliderProps>(
         value={value?.[0]}
         defaultValue={defaultValue?.[0]}
         onChange={(e) => onValueChange?.([Number(e.target.value)])}
-        className={cn('w-full accent-violet-600 cursor-pointer', className)}
+        className={cn('w-full accent-emerald-600 cursor-pointer', className)}
         {...(props as React.InputHTMLAttributes<HTMLInputElement>)}
       />
     )

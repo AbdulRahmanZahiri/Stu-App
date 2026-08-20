@@ -75,7 +75,7 @@ function StatCard({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const { profile, loading: authLoading } = useAuth()
+  const { user: authUser, profile, loading: authLoading } = useAuth()
   const router = useRouter()
 
   const [users,   setUsers]   = useState<AdminUser[]>([])
@@ -87,17 +87,17 @@ export default function AdminPage() {
 
   // ── Client-side guard (Layer 3) ─────────────────────────────────────────────
   useEffect(() => {
-    if (!authLoading && profile && !profile.is_admin) {
+    if (!authLoading && !authUser) {
+      router.replace('/login')
+    } else if (!authLoading && profile && !profile.is_admin) {
       router.replace('/dashboard')
     }
-  }, [authLoading, profile, router])
+  }, [authLoading, authUser, profile, router])
 
   // ── Fetch data ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (authLoading || !profile?.is_admin) return
-
-    setLoading(true)
-    setError(null)
+    let cancelled = false
 
     fetch('/api/admin')
       .then(async res => {
@@ -108,12 +108,16 @@ export default function AdminPage() {
         return res.json()
       })
       .then(data => {
+        if (cancelled) return
         setUsers(data.users)
         setStats(data.stats)
+        setError(null)
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [authLoading, profile, refreshKey])
+      .catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+
+    return () => { cancelled = true }
+  }, [authLoading, profile?.is_admin, refreshKey])
 
   // ── Filtered users ──────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -128,10 +132,10 @@ export default function AdminPage() {
   }, [users, search])
 
   // ── Loading / guard states ──────────────────────────────────────────────────
-  if (authLoading || !profile) {
+  if (authLoading || !authUser || !profile) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-6 w-6 animate-spin text-violet-500" />
+        <RefreshCw className="h-6 w-6 animate-spin text-emerald-500" />
       </div>
     )
   }
@@ -145,8 +149,8 @@ export default function AdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-violet-100 dark:bg-violet-900/30">
-            <ShieldCheck className="h-6 w-6 text-violet-600 dark:text-violet-400" />
+          <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
+            <ShieldCheck className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Admin Panel</h1>
@@ -156,7 +160,11 @@ export default function AdminPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setRefreshKey(k => k + 1)}
+          onClick={() => {
+            setLoading(true)
+            setError(null)
+            setRefreshKey(k => k + 1)
+          }}
           disabled={loading}
           className="gap-2"
         >
@@ -168,7 +176,7 @@ export default function AdminPage() {
       {/* Error */}
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-400">
-          ⚠️ {error} — make sure you&apos;ve run <code className="font-mono text-xs">supabase/admin_setup.sql</code> in your Supabase dashboard.
+          ⚠️ {error} — apply the latest integration migration and verify your profile has <code className="font-mono text-xs">is_admin = true</code>.
         </div>
       )}
 
@@ -184,9 +192,9 @@ export default function AdminPage() {
           label="Total Users"
           value={stats?.total ?? '—'}
           sub="registered accounts"
-          gradient="from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20"
-          iconBg="bg-violet-100 dark:bg-violet-900/40"
-          textColor="text-violet-700 dark:text-violet-300"
+          gradient="from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20"
+          iconBg="bg-emerald-100 dark:bg-emerald-900/40"
+          textColor="text-emerald-700 dark:text-emerald-300"
         />
         <StatCard
           icon={UserPlus}
@@ -223,7 +231,7 @@ export default function AdminPage() {
           <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <CardTitle className="text-base font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                <GraduationCap className="h-4 w-4 text-violet-500" />
+                <GraduationCap className="h-4 w-4 text-emerald-500" />
                 All Users
                 {!loading && (
                   <Badge variant="secondary" className="text-xs font-normal">

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useSyncExternalStore } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
@@ -15,12 +15,29 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore } from '@/lib/app-store'
-import { formatRelativeDate, getPriorityColor, getDueDateStatus, cn } from '@/lib/utils'
+import { formatRelativeDate, getPriorityColor, getDueDateStatus, getEffectiveTaskStatus, cn } from '@/lib/utils'
+import { isToday } from 'date-fns'
 import { useTaskNotifications } from '@/hooks/useTaskNotifications'
 import type { Task } from '@/lib/types'
 
 const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
 const NO_COURSE_VALUE = '__no_course__'
+const BLANK_TASK = {
+  title: '', courseId: '', type: 'assignment' as Task['type'],
+  priority: 'medium' as Task['priority'], dueDate: '', estimatedHours: '',
+}
+
+const validFilters = new Set(['all', 'in_progress', 'today', 'overdue', 'completed'])
+
+function subscribeToNotificationPermission() {
+  return () => undefined
+}
+
+function getNotificationPermission(): NotificationPermission {
+  return typeof window !== 'undefined' && 'Notification' in window
+    ? Notification.permission
+    : 'denied'
+}
 
 function toLocalDateTimeInputValue(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -60,27 +77,42 @@ export default function TasksPage() {
 
 function TasksPageContent() {
   const searchParams = useSearchParams()
+  const filterParam = searchParams.get('filter')
+  const initialFilter = filterParam && validFilters.has(filterParam) ? filterParam : 'all'
+
+  return (
+    <TasksManager
+      key={searchParams.toString()}
+      initialFilter={initialFilter}
+      initialCompose={Boolean(searchParams.get('compose'))}
+    />
+  )
+}
+
+function TasksManager({
+  initialFilter,
+  initialCompose,
+}: {
+  initialFilter: string
+  initialCompose: boolean
+}) {
   const { tasks, courses, addTasks, updateTask, deleteTask: storeDeleteTask } = useAppStore()
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
-  const [showAdd, setShowAdd] = useState(false)
+  const [filter, setFilter] = useState(initialFilter)
+  const [showAdd, setShowAdd] = useState(initialCompose)
   const [editTask, setEditTask] = useState<Task | null>(null)
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default')
+  const browserPermission = useSyncExternalStore(
+    subscribeToNotificationPermission,
+    getNotificationPermission,
+    () => 'default',
+  )
+  const [permissionOverride, setPermissionOverride] = useState<NotificationPermission | null>(null)
+  const notifPermission = permissionOverride ?? browserPermission
   const [notifDismissed, setNotifDismissed] = useState(false)
 
   useTaskNotifications(tasks)
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotifPermission(Notification.permission)
-    }
-  }, [])
-
-  const blankTask = {
-    title: '', courseId: '', type: 'assignment' as Task['type'],
-    priority: 'medium' as Task['priority'], dueDate: '', estimatedHours: '',
-  }
-  const [form, setForm] = useState(blankTask)
+  const [form, setForm] = useState(BLANK_TASK)
 
   const filtered = tasks
     .filter((t) => {
@@ -90,8 +122,8 @@ function TasksPageContent() {
     })
     .filter((t) => {
       if (filter === 'all') return true
-      if (filter === 'today') return !!t.dueDate && getDueDateStatus(t.dueDate) === 'urgent'
-      if (filter === 'overdue') return t.status === 'overdue'
+      if (filter === 'today') return !!t.dueDate && isToday(new Date(t.dueDate))
+      if (filter === 'overdue') return getEffectiveTaskStatus(t) === 'overdue'
       if (filter === 'completed') return t.status === 'completed'
       if (filter === 'in_progress') return t.status === 'in_progress'
       return true
@@ -116,7 +148,7 @@ function TasksPageContent() {
   }
 
   function openAdd() {
-    setForm(blankTask)
+    setForm(BLANK_TASK)
     setEditTask(null)
     setShowAdd(true)
   }
@@ -147,6 +179,7 @@ function TasksPageContent() {
         type: form.type,
         priority: form.priority,
         dueDate: parsedDueDate,
+        status: editTask.status === 'overdue' && (!parsedDueDate || parsedDueDate.getTime() > Date.now()) ? 'not_started' : editTask.status,
         estimatedHours: form.estimatedHours ? parseFloat(form.estimatedHours) : undefined,
       })
     } else {
@@ -173,18 +206,6 @@ function TasksPageContent() {
   function clearCompleted() {
     tasks.filter((t) => t.status === 'completed').forEach((t) => storeDeleteTask(t.id))
   }
-
-  useEffect(() => {
-    const filterParam = searchParams.get('filter')
-    if (filterParam && ['all', 'in_progress', 'today', 'overdue', 'completed'].includes(filterParam)) {
-      setFilter(filterParam)
-    }
-
-    const compose = searchParams.get('compose')
-    if (compose) {
-      openAdd()
-    }
-  }, [searchParams])
 
   const completed = tasks.filter((t) => t.status === 'completed').length
   const total = tasks.length
@@ -214,20 +235,20 @@ function TasksPageContent() {
 
       {/* Notification banner */}
       {!notifDismissed && notifPermission === 'default' && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-4 flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3">
-          <Bell className="h-4 w-4 text-violet-600 shrink-0" />
-          <p className="flex-1 text-xs text-violet-700">
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+          <Bell className="h-4 w-4 text-emerald-600 shrink-0" />
+          <p className="flex-1 text-xs text-emerald-700">
             <strong>Enable notifications</strong> to get alerts when tasks are due soon or overdue.
           </p>
-          <Button size="sm" variant="outline" className="h-7 text-xs border-violet-200 text-violet-700 hover:bg-violet-100"
+          <Button size="sm" variant="outline" className="h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-100"
             onClick={async () => {
               const result = await Notification.requestPermission()
-              setNotifPermission(result)
+              setPermissionOverride(result)
               setNotifDismissed(true)
             }}>
             Enable
           </Button>
-          <button onClick={() => setNotifDismissed(true)} className="text-violet-400 hover:text-violet-600">
+          <button onClick={() => setNotifDismissed(true)} className="text-emerald-400 hover:text-emerald-600">
             <X className="h-4 w-4" />
           </button>
         </motion.div>
@@ -242,15 +263,15 @@ function TasksPageContent() {
                 <p className="text-sm font-semibold text-slate-900">Semester Progress</p>
                 <p className="text-xs text-slate-400">{completed} of {total} tasks completed</p>
               </div>
-              <span className="text-xl font-extrabold text-violet-600">{progress}%</span>
+              <span className="text-xl font-extrabold text-emerald-600">{progress}%</span>
             </div>
-            <Progress value={progress} className="h-2" indicatorClassName="bg-gradient-to-r from-violet-500 to-indigo-500" />
+            <Progress value={progress} className="h-2" indicatorClassName="bg-gradient-to-r from-emerald-500 to-green-500" />
             <div className="mt-4 grid grid-cols-4 gap-4 border-t border-slate-50 pt-4">
               {[
                 { label: 'Total', value: total, color: 'text-slate-700' },
                 { label: 'Completed', value: completed, color: 'text-emerald-600' },
                 { label: 'In Progress', value: tasks.filter((t) => t.status === 'in_progress').length, color: 'text-blue-600' },
-                { label: 'Overdue', value: tasks.filter((t) => t.status === 'overdue').length, color: 'text-rose-600' },
+                { label: 'Overdue', value: tasks.filter((t) => getEffectiveTaskStatus(t) === 'overdue').length, color: 'text-rose-600' },
               ].map((s) => (
                 <div key={s.label} className="text-center">
                   <p className={`text-xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -282,8 +303,8 @@ function TasksPageContent() {
               className={cn(
                 'rounded-xl px-3 py-1.5 text-xs font-medium transition-all border',
                 filter === f.id
-                  ? 'bg-violet-600 text-white border-violet-600'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-violet-300 hover:text-violet-600'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-600'
               )}
             >
               {f.label}
@@ -402,14 +423,14 @@ function TaskRow({ task, onToggle, onEdit, onDelete }: {
     <div className={cn(
       'group flex items-center gap-4 rounded-2xl border bg-white p-4 transition-all hover:shadow-sm',
       isCompleted ? 'border-slate-50 opacity-60' : 'border-slate-100',
-      task.status === 'overdue' && !isCompleted && 'border-rose-100 bg-rose-50/30'
+      statusDate === 'overdue' && !isCompleted && 'border-rose-100 bg-rose-50/30'
     )}>
       {/* Checkbox */}
       <button
         onClick={() => onToggle(task.id)}
         className={cn(
           'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all',
-          isCompleted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 hover:border-violet-400'
+          isCompleted ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 hover:border-emerald-400'
         )}
       >
         {isCompleted && <Check className="h-3 w-3" />}

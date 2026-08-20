@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { optionalApiUser } from '@/lib/api-auth'
 
 let client: Groq | null = null
 function getClient(): Groq {
@@ -9,22 +10,16 @@ function getClient(): Groq {
 
 const SYSTEM_PROMPT = `You are an AI academic assistant for ScholarFlow, a student portal for university students.
 You help students with their coursework, study plans, summaries, flashcards, and academic questions.
-The student is currently enrolled in these courses:
-- COMP 2007: Data Structures & Algorithms
-- COMP 2003: Programming II (Java)
-- MATH 2050: Linear Algebra
-- ENGL 1110: Academic Writing
-
 Be concise, helpful, and encouraging. Use markdown formatting with **bold** for key terms, bullet points for lists, and numbered lists for steps. Keep responses focused and academic.`
 
 const MAX_MESSAGES    = 50    // max conversation turns
 const MAX_MSG_LENGTH  = 4000  // max chars per message
 const ALLOWED_ROLES   = new Set(['user', 'assistant'])
 
-function sanitizeText(str: unknown): string {
+function sanitizeText(str: unknown, maxLength = MAX_MSG_LENGTH): string {
   if (typeof str !== 'string') return ''
   // Remove null bytes and control chars (except newline/tab)
-  return str.replace(/\x00/g, '').replace(/[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, MAX_MSG_LENGTH)
+  return str.replace(/\x00/g, '').replace(/[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').slice(0, maxLength)
 }
 
 export async function POST(req: NextRequest) {
@@ -38,6 +33,8 @@ export async function POST(req: NextRequest) {
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
     }
+
+    const access = await optionalApiUser()
 
     let body: unknown
     try {
@@ -71,10 +68,23 @@ export async function POST(req: NextRequest) {
       return { role: role as 'user' | 'assistant', content }
     })
 
+    let courseContext = '\nThe student has not added any active courses yet.'
+    if (access.client && access.user) {
+      const { data: courses } = await access.client
+        .from('courses')
+        .select('code, name')
+        .eq('student_id', access.user.id)
+        .eq('status', 'active')
+        .limit(20)
+      if ((courses ?? []).length > 0) {
+        courseContext = `\nThe student's active courses are:\n${(courses ?? []).map((course) => `- ${sanitizeText(course.code, 80)}: ${sanitizeText(course.name, 160)}`).join('\n')}`
+      }
+    }
+
     const response = await getClient().chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       max_tokens: 1024,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      messages: [{ role: 'system', content: `${SYSTEM_PROMPT}${courseContext}` }, ...messages],
     })
 
     const content = response.choices[0]?.message?.content

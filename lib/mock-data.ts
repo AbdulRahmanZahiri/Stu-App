@@ -3,7 +3,6 @@ import type {
   Course,
   Task,
   Note,
-  Resource,
   ChatRoom,
   ChatMessage,
   GradeEntry,
@@ -105,7 +104,6 @@ export const mockCourses: Course[] = [
 ]
 
 // ─── Tasks ─────────────────────────────────────────────────────────────────────
-const now = new Date('2026-04-16')
 export const mockTasks: Task[] = [
   {
     id: 'task-001',
@@ -116,7 +114,7 @@ export const mockTasks: Task[] = [
     type: 'assignment',
     status: 'in_progress',
     priority: 'high',
-    dueDate: new Date('2026-04-18T23:59:00'),
+    dueDate: new Date('2026-07-11T23:59:00'),
     estimatedHours: 4,
     courseCode: 'COMP 2003',
     courseColor: '#6366f1',
@@ -131,7 +129,7 @@ export const mockTasks: Task[] = [
     type: 'lab',
     status: 'not_started',
     priority: 'urgent',
-    dueDate: new Date('2026-04-17T17:00:00'),
+    dueDate: new Date('2026-07-10T17:00:00'),
     estimatedHours: 3,
     courseCode: 'COMP 2007',
     courseColor: '#8b5cf6',
@@ -146,7 +144,7 @@ export const mockTasks: Task[] = [
     type: 'assignment',
     status: 'not_started',
     priority: 'medium',
-    dueDate: new Date('2026-04-22T23:59:00'),
+    dueDate: new Date('2026-07-15T23:59:00'),
     estimatedHours: 2.5,
     courseCode: 'MATH 2050',
     courseColor: '#0ea5e9',
@@ -161,7 +159,7 @@ export const mockTasks: Task[] = [
     type: 'assignment',
     status: 'in_progress',
     priority: 'high',
-    dueDate: new Date('2026-04-20T23:59:00'),
+    dueDate: new Date('2026-07-13T23:59:00'),
     estimatedHours: 5,
     courseCode: 'ENGL 1110',
     courseColor: '#10b981',
@@ -176,7 +174,7 @@ export const mockTasks: Task[] = [
     type: 'exam',
     status: 'not_started',
     priority: 'urgent',
-    dueDate: new Date('2026-04-25T10:00:00'),
+    dueDate: new Date('2026-07-18T10:00:00'),
     estimatedHours: 6,
     courseCode: 'COMP 2007',
     courseColor: '#8b5cf6',
@@ -191,8 +189,8 @@ export const mockTasks: Task[] = [
     type: 'reading',
     status: 'completed',
     priority: 'low',
-    dueDate: new Date('2026-04-15T09:00:00'),
-    completedAt: new Date('2026-04-14T22:00:00'),
+    dueDate: new Date('2026-07-08T09:00:00'),
+    completedAt: new Date('2026-07-07T22:00:00'),
     estimatedHours: 1,
     courseCode: 'COMP 2003',
     courseColor: '#6366f1',
@@ -207,7 +205,7 @@ export const mockTasks: Task[] = [
     type: 'quiz',
     status: 'overdue',
     priority: 'urgent',
-    dueDate: new Date('2026-04-14T23:59:00'),
+    dueDate: new Date('2026-07-07T23:59:00'),
     estimatedHours: 1,
     courseCode: 'MATH 2050',
     courseColor: '#0ea5e9',
@@ -222,7 +220,7 @@ export const mockTasks: Task[] = [
     type: 'project',
     status: 'not_started',
     priority: 'high',
-    dueDate: new Date('2026-05-05T23:59:00'),
+    dueDate: new Date('2026-07-28T23:59:00'),
     estimatedHours: 20,
     courseCode: 'COMP 2003',
     courseColor: '#6366f1',
@@ -333,16 +331,16 @@ export const mockCourseGrades: CourseGrades[] = [
 
 // ─── Calendar Events ────────────────────────────────────────────────────────────
 export const mockCalendarEvents: CalendarEvent[] = [
-  { id: 'e-001', studentId: 'student-001', courseId: 'course-002', title: 'Lab 4 Due', type: 'deadline', startDate: new Date('2026-04-17T17:00:00'), allDay: false, color: '#8b5cf6', courseCode: 'COMP 2007' },
-  { id: 'e-002', studentId: 'student-001', courseId: 'course-001', title: 'Assignment 3 Due', type: 'deadline', startDate: new Date('2026-04-18T23:59:00'), allDay: false, color: '#6366f1', courseCode: 'COMP 2003' },
-  { id: 'e-003', studentId: 'student-001', courseId: 'course-004', title: 'Research Paper Draft', type: 'deadline', startDate: new Date('2026-04-20T23:59:00'), allDay: false, color: '#10b981', courseCode: 'ENGL 1110' },
-  { id: 'e-004', studentId: 'student-001', courseId: 'course-003', title: 'Problem Set 5 Due', type: 'deadline', startDate: new Date('2026-04-22T23:59:00'), allDay: false, color: '#0ea5e9', courseCode: 'MATH 2050' },
-  { id: 'e-005', studentId: 'student-001', courseId: 'course-002', title: 'COMP 2007 Midterm', type: 'exam', startDate: new Date('2026-04-25T10:00:00'), allDay: false, color: '#8b5cf6', courseCode: 'COMP 2007' },
-  { id: 'e-006', studentId: 'student-001', courseId: 'course-003', title: 'MATH 2050 Final', type: 'exam', startDate: new Date('2026-05-01T09:00:00'), allDay: false, color: '#0ea5e9', courseCode: 'MATH 2050' },
-  { id: 'e-007', studentId: 'student-001', courseId: 'course-001', title: 'COMP 2003 Final Project', type: 'deadline', startDate: new Date('2026-05-05T23:59:00'), allDay: true, color: '#6366f1', courseCode: 'COMP 2003' },
-  { id: 'e-008', studentId: 'student-001', title: 'Study Group – COMP 2007', type: 'personal', startDate: new Date('2026-04-19T14:00:00'), allDay: false, color: '#f59e0b' },
-  { id: 'e-009', studentId: 'student-001', courseId: 'course-004', title: 'Essay Peer Review Due', type: 'deadline', startDate: new Date('2026-04-23T23:59:00'), allDay: false, color: '#10b981', courseCode: 'ENGL 1110' },
-  { id: 'e-010', studentId: 'student-001', title: 'Internship Application Deadline', type: 'reminder', startDate: new Date('2026-04-28T23:59:00'), allDay: true, color: '#f43f5e' },
+  { id: 'e-001', studentId: 'student-001', courseId: 'course-002', title: 'Lab 4 Due', type: 'deadline', startDate: new Date('2026-07-10T17:00:00'), allDay: false, color: '#8b5cf6', courseCode: 'COMP 2007' },
+  { id: 'e-002', studentId: 'student-001', courseId: 'course-001', title: 'Assignment 3 Due', type: 'deadline', startDate: new Date('2026-07-11T23:59:00'), allDay: false, color: '#6366f1', courseCode: 'COMP 2003' },
+  { id: 'e-003', studentId: 'student-001', courseId: 'course-004', title: 'Research Paper Draft', type: 'deadline', startDate: new Date('2026-07-13T23:59:00'), allDay: false, color: '#10b981', courseCode: 'ENGL 1110' },
+  { id: 'e-004', studentId: 'student-001', courseId: 'course-003', title: 'Problem Set 5 Due', type: 'deadline', startDate: new Date('2026-07-15T23:59:00'), allDay: false, color: '#0ea5e9', courseCode: 'MATH 2050' },
+  { id: 'e-005', studentId: 'student-001', courseId: 'course-002', title: 'COMP 2007 Midterm', type: 'exam', startDate: new Date('2026-07-18T10:00:00'), allDay: false, color: '#8b5cf6', courseCode: 'COMP 2007' },
+  { id: 'e-006', studentId: 'student-001', courseId: 'course-003', title: 'MATH 2050 Final', type: 'exam', startDate: new Date('2026-07-24T09:00:00'), allDay: false, color: '#0ea5e9', courseCode: 'MATH 2050' },
+  { id: 'e-007', studentId: 'student-001', courseId: 'course-001', title: 'COMP 2003 Final Project', type: 'deadline', startDate: new Date('2026-07-28T23:59:00'), allDay: true, color: '#6366f1', courseCode: 'COMP 2003' },
+  { id: 'e-008', studentId: 'student-001', title: 'Study Group – COMP 2007', type: 'personal', startDate: new Date('2026-07-12T14:00:00'), allDay: false, color: '#f59e0b' },
+  { id: 'e-009', studentId: 'student-001', courseId: 'course-004', title: 'Essay Peer Review Due', type: 'deadline', startDate: new Date('2026-07-16T23:59:00'), allDay: false, color: '#10b981', courseCode: 'ENGL 1110' },
+  { id: 'e-010', studentId: 'student-001', title: 'Internship Application Deadline', type: 'reminder', startDate: new Date('2026-07-21T23:59:00'), allDay: true, color: '#f43f5e' },
 ]
 
 // ─── Notes & Resources ──────────────────────────────────────────────────────────
@@ -663,8 +661,10 @@ export const mockAudioItems: AudioStudyItem[] = [
   {
     id: 'audio-003',
     title: 'Essay Structure & Argumentation',
-    status: 'generating',
-    createdAt: new Date('2026-04-16'),
+    status: 'ready',
+    duration: 300,
+    script: 'Welcome to your ScholarFlow study podcast! Today we cover essay structure and argumentation from your ENGL 1110 course. A strong essay starts with a clear thesis that makes a specific, arguable claim. Your body paragraphs each support one main point — open with a topic sentence, present your evidence, and explain how it connects to your thesis. Transitions between paragraphs keep your argument flowing. Finally, your conclusion should synthesize your points, not just repeat them. Remember: the strength of an argument comes from the quality of your evidence and the clarity of your reasoning.',
+    createdAt: new Date('2026-07-07'),
   },
 ]
 

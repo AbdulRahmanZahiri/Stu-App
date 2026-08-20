@@ -1,269 +1,103 @@
 # ScholarFlow
 
-**AI-Powered Student Academic Portal**
+ScholarFlow is a Next.js student portal for courses, syllabus imports, deadlines,
+grades, notes, calendars, community chat, degree planning, and AI study help.
 
-> Your all-in-one academic platform for university students — manage courses, track grades, organize tasks, study with AI, and connect with classmates.
+## Current Stack
 
----
+- Next.js 16, React 19, TypeScript, Tailwind CSS
+- Supabase Auth, PostgreSQL, Storage, Row Level Security, and Realtime
+- Groq for syllabus parsing and the AI assistant
+- Browser Speech Synthesis for audio study playback
 
-## Product Vision
+ScholarFlow currently has one feature set with no premium tier. AI and audio
+features are available to every signed-in account.
 
-ScholarFlow is a modern, production-grade SaaS-style student portal that helps university students manage their entire academic life in one beautiful interface. Think Notion meets Duolingo meets a smart academic dashboard.
+Unauthenticated visitors can explore a local demo. Signed-in users use their own
+Supabase-backed data; demo records are never written into an authenticated account.
 
-**Startup pitch:** *"We help university students stop drowning in syllabi, deadlines, and scattered notes — and start focusing on what actually matters: learning."*
+## Requirements
 
----
+- Node.js 20.19+, 22.13+, or 24+
+- npm
+- A Supabase project
+- A Groq API key for AI features
 
-## Features
+Node.js 23 is not supported by the current ESLint toolchain. Use an even-numbered
+LTS release such as Node.js 22.
 
-| Feature | Status |
-|---------|--------|
-| Landing Page | ✅ Complete |
-| Student Login | ✅ Complete (mock auth) |
-| Onboarding Flow | ✅ Complete |
-| Main Dashboard | ✅ Complete |
-| Course Management | ✅ Complete |
-| Syllabus Upload + AI Parser | ✅ UI Complete · AI mocked |
-| Task Manager | ✅ Complete |
-| Calendar | ✅ Complete |
-| Grade Tracker | ✅ Complete |
-| AI Assistant | ✅ UI Complete · Responses mocked |
-| Notes & Resources Library | ✅ Complete |
-| Student Community Chat | ✅ Complete |
-| Academic Planner | ✅ Complete |
-| Audio Study Mode | ✅ UI Complete · TTS mocked |
-| Settings & Profile | ✅ Complete |
-| Real Supabase Auth | 🔲 TODO |
-| Real AI Integration | 🔲 TODO |
-| Real File Storage | 🔲 TODO |
-| Push Notifications | 🔲 TODO |
-| Mobile App | 🔲 Future |
-
-
-
-## Tech Stack
-
-- **Framework:** Next.js 15 (App Router, TypeScript)
-- **Styling:** Tailwind CSS v3 + CSS Variables
-- **UI Components:** Custom shadcn/ui-style components (Radix UI primitives)
-- **Animations:** Framer Motion
-- **Icons:** Lucide React
-- **Charts:** Recharts
-- **Database:** Supabase PostgreSQL (schema provided)
-- **Auth:** Supabase Auth (configured, mock active for demo)
-- **Storage:** Supabase Storage (placeholder)
-- **AI:** OpenAI / Anthropic Claude (modular, mock active)
-- **Date utilities:** date-fns
-
----
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+
-- npm / yarn / pnpm
-
-### Installation
+## Local Setup
 
 ```bash
-# Navigate to project
-cd scholarflow
-
-# Install dependencies
 npm install
-
-# Copy environment variables
-cp .env.local.example .env.local
-
-# Start dev server
+cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:3000](http://localhost:3000).
 
-### Demo Access
+## Environment Variables
 
-No credentials needed for demo. Visit `/dashboard` directly or:
-1. Go to `/login`
-2. Click **"Enter Demo Dashboard →"**
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-Or go to `/onboarding` to experience the new user flow.
+GROQ_API_KEY=your-groq-api-key
 
----
-
-## Project Structure
-
-```
-scholarflow/
-├── app/
-│   ├── page.tsx                    # Landing page
-│   ├── layout.tsx                  # Root layout (font, metadata)
-│   ├── globals.css                 # Global styles + CSS variables
-│   ├── (auth)/
-│   │   ├── login/page.tsx          # Student login
-│   │   └── onboarding/page.tsx     # Multi-step onboarding
-│   └── (dashboard)/
-│       ├── layout.tsx              # Dashboard shell (sidebar + topbar)
-│       ├── dashboard/page.tsx      # Main dashboard
-│       ├── courses/page.tsx        # Course management + syllabus upload
-│       ├── tasks/page.tsx          # Smart task manager
-│       ├── calendar/page.tsx       # Monthly/weekly calendar
-│       ├── grades/page.tsx         # Grade tracker + what-if calculator
-│       ├── ai-assistant/page.tsx   # AI chat assistant
-│       ├── notes/page.tsx          # Notes & resource library
-│       ├── community/page.tsx      # Student chat groups
-│       ├── planner/page.tsx        # Academic degree planner
-│       ├── audio/page.tsx          # Audio study mode
-│       └── settings/page.tsx       # Profile & preferences
-├── components/
-│   ├── layout/
-│   │   ├── sidebar.tsx             # Collapsible dark sidebar
-│   │   └── topbar.tsx              # Top navigation bar
-│   └── ui/                         # shadcn-style UI primitives
-│       ├── button.tsx
-│       ├── card.tsx
-│       ├── badge.tsx
-│       ├── input.tsx, label.tsx, textarea.tsx
-│       ├── progress.tsx, skeleton.tsx
-│       ├── avatar.tsx, separator.tsx
-│       ├── tabs.tsx, dialog.tsx
-│       ├── dropdown-menu.tsx
-│       ├── select.tsx, switch.tsx
-│       ├── scroll-area.tsx, tooltip.tsx
-├── lib/
-│   ├── types.ts                    # All TypeScript interfaces
-│   ├── mock-data.ts                # Demo data (student, courses, tasks, etc.)
-│   ├── utils.ts                    # Utility functions (cn, date formatting, etc.)
-│   └── supabase.ts                 # Supabase client (placeholder)
-└── supabase/
-    └── schema.sql                  # Full PostgreSQL schema with RLS
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
----
+Keep `GROQ_API_KEY` server-only. Never prefix it with `NEXT_PUBLIC_`.
 
-## Database Schema
+## Database Setup
 
-See [`supabase/schema.sql`](supabase/schema.sql) for the complete schema including:
-- `student_profiles` — extended user profiles
-- `courses` — registered courses
-- `syllabi` — uploaded course syllabi with AI extraction
-- `tasks` — assignments, exams, quizzes
-- `grade_categories` + `grade_entries` — weighted grade tracking
-- `calendar_events` — deadlines, exams, reminders
-- `notes` — personal and shared notes
-- `chat_rooms` + `chat_messages` + `room_members` — community chat
-- `academic_plans` — degree planning
-- `reminders` — scheduled alerts
-- `audio_study_items` — TTS-generated study audio
+Run the following files in the Supabase SQL Editor, in order:
 
-All tables have Row-Level Security (RLS) configured.
+1. `supabase/schema.sql` only when creating a brand-new database.
+2. `supabase/migrations/202608120001_backend_integration.sql` for new and existing databases.
 
----
+The integration migration adds current profile fields, RLS policies, profile
+provisioning, private file buckets, Realtime chat, planner persistence, account
+deletion, and the transactional syllabus-import RPC. Legacy billing-compatible
+columns remain dormant so a future billing implementation can be added safely.
 
-## What's Mocked vs. Real
+For an administrator, replace the placeholder email in
+`supabase/admin_setup.sql` and run that statement after the integration migration.
 
-### Fully Implemented (UI + Logic)
-- Dashboard with live mock data
-- Task manager with toggle complete, filtering, sorting
-- Grade tracker with charts and what-if calculator
-- Calendar with event display
-- Community chat (local state)
-- Academic planner with requirement tracker
-- Notes library with filtering
-- Settings with form interactions
-- AI assistant (mock responses based on keywords)
-- Syllabus upload simulator (multi-step animation)
+See `supabase/README.md` for the verification checklist.
 
-### Mocked / Placeholder (UI ready, backend TODO)
-- Supabase authentication (replace with real Supabase auth)
-- AI responses (replace `generateResponse()` with real OpenAI/Claude API call)
-- File uploads (connect to Supabase Storage)
-- Syllabus AI parsing (connect to document parsing + LLM pipeline)
-- Audio TTS generation (connect to ElevenLabs / OpenAI TTS)
-- Push notifications (connect to Supabase Edge Functions or Resend)
-- Real-time chat (connect to Supabase Realtime)
+## Syllabus Import
 
----
+All users can import PDF, DOCX, TXT, or Markdown files, or paste text. ScholarFlow
+uses a deterministic local parser in demo mode and Groq-enhanced extraction for
+all authenticated accounts. The result is always previewed before saving.
+Signed-in imports upload the source privately and save the syllabus, grading
+categories, and generated tasks in one database transaction; demo imports remain
+in browser storage.
 
-## Connecting Real Services
+Scanned image-only PDFs need OCR before import. Files are limited to 10 MB.
 
-### Supabase Auth
-```typescript
-// In lib/supabase.ts
-import { createClient } from '@supabase/supabase-js'
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+## Validation
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+npm audit --omit=dev
 ```
 
-### AI Assistant (Anthropic Claude)
-```typescript
-// In app/api/ai/route.ts
-import Anthropic from '@anthropic-ai/sdk'
-const client = new Anthropic()
+## AI-Agent Coordination
 
-export async function POST(req: Request) {
-  const { messages } = await req.json()
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages,
-  })
-  return Response.json({ content: response.content[0].text })
-}
-```
+Codex and Claude Code cannot directly message each other. This repository uses
+`AGENTS.md`, `CLAUDE.md`, and `docs/AI_HANDOFF.md` as a shared coordination layer.
+For simultaneous work, give each agent a separate Git worktree and branch; merge
+small reviewed commits rather than allowing both agents to edit the same files.
 
-### Syllabus Parsing
-Connect the upload flow to a document parsing service (LlamaParse, Unstructured.io, or custom Claude prompt chain).
+## Main Directories
 
----
-
-## Future Roadmap
-
-### Phase 2 (Next Release)
-- [ ] Real Supabase authentication
-- [ ] Live AI assistant (Claude API integration)
-- [ ] PDF syllabus parsing pipeline
-- [ ] Supabase Realtime community chat
-- [ ] Email notifications via Resend
-- [ ] Dark mode
-
-### Phase 3
-- [ ] Mobile app (React Native / Expo)
-- [ ] Google Calendar sync
-- [ ] Institutional SSO integration (OAuth with university systems)
-- [ ] Audio study mode with real TTS (ElevenLabs / OpenAI)
-- [ ] Collaborative notes (live co-editing)
-- [ ] Study group scheduling
-
-### Phase 4 (Scale)
-- [ ] Multi-university support
-- [ ] Course ratings and professor reviews
-- [ ] AI-generated personalized study plans
-- [ ] Spaced repetition flashcard system
-- [ ] API for university LMS integration
-- [ ] Marketplace for student resources
-
----
-
-## Design System
-
-**Colors:**
-- Primary: Violet 600 (#6366f1) → Indigo 600 (#4f46e5)
-- Success: Emerald 500
-- Warning: Amber 500
-- Danger: Rose 500
-- Info: Sky 500
-
-**Spacing:** 4px base grid, 2xl (16px) corner radius on cards
-
-**Typography:**
-- Font: Inter (Google Fonts)
-- Headings: font-bold or font-extrabold
-- Body: text-slate-600
-- Muted: text-slate-400
-
----
-
-*ScholarFlow · Built for students, by students · Winter 2026*
+- `app/` — pages, layouts, and server route handlers
+- `components/` — reusable UI and layout components
+- `lib/` — auth, persistence, planner, and shared types
+- `hooks/` — browser notification behavior
+- `supabase/` — base schema, integration migration, and setup notes
+- `docs/AI_HANDOFF.md` — shared agent status and handoff log

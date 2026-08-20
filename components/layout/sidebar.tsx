@@ -17,18 +17,15 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Bell,
   Zap,
-  Crown,
-  Lock,
   X,
+  CalendarRange,
 } from 'lucide-react'
-import { cn, getInitials } from '@/lib/utils'
-import { mockStudent } from '@/lib/mock-data'
+import { cn, getEffectiveTaskStatus, getInitials } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
-import { useState, type ElementType } from 'react'
+import { type ElementType } from 'react'
 import { useAppStore } from '@/lib/app-store'
+import { useAuth } from '@/lib/auth-context'
 
 type NavItem = {
   href: string
@@ -36,16 +33,15 @@ type NavItem = {
   icon: ElementType
   badge?: string
   highlight?: boolean
-  proOnly?: boolean
 }
 
-const navItems: Array<{ group: string; items: NavItem[] }> = [
+const baseNavItems: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'Main',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/courses', label: 'Courses', icon: BookOpen },
-      { href: '/tasks', label: 'Tasks', icon: CheckSquare, badge: '3' },
+      { href: '/tasks', label: 'Tasks', icon: CheckSquare },
       { href: '/calendar', label: 'Calendar', icon: CalendarDays },
       { href: '/grades', label: 'Grades', icon: BarChart3 },
     ],
@@ -53,11 +49,12 @@ const navItems: Array<{ group: string; items: NavItem[] }> = [
   {
     group: 'Tools',
     items: [
-      { href: '/ai-assistant', label: 'AI Assistant', icon: Sparkles, highlight: true, proOnly: true },
+      { href: '/ai-assistant', label: 'AI Assistant', icon: Sparkles, highlight: true },
+      { href: '/study-planner', label: 'Study Planner', icon: CalendarRange },
       { href: '/notes', label: 'Notes & Resources', icon: FileText },
       { href: '/community', label: 'Community', icon: MessageSquare },
       { href: '/planner', label: 'Academic Planner', icon: GraduationCap },
-      { href: '/audio', label: 'Audio Study', icon: Headphones, proOnly: true },
+      { href: '/audio', label: 'Audio Study', icon: Headphones },
     ],
   },
 ]
@@ -71,7 +68,23 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
-  const { plan } = useAppStore()
+  const { tasks } = useAppStore()
+  const { profile } = useAuth()
+  const displayName = profile?.name || 'Student'
+  const affiliation = profile?.university_name || profile?.major || 'ScholarFlow student'
+
+  const urgentCount = tasks.filter(
+    (task) => task.status !== 'completed' && (task.priority === 'urgent' || getEffectiveTaskStatus(task) === 'overdue')
+  ).length
+
+  const navItems = baseNavItems.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.href === '/tasks' && urgentCount > 0
+        ? { ...item, badge: String(urgentCount) }
+        : item
+    ),
+  }))
 
   return (
     <motion.aside
@@ -89,12 +102,12 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
       style={{ minWidth: collapsed ? 72 : 260 }}
     >
       {/* Gradient overlay */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-violet-950/30 via-transparent to-indigo-950/20" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-emerald-950/30 via-transparent to-green-950/20" />
 
       {/* Logo */}
       <div className="relative flex h-16 items-center border-b border-white/5 px-4">
         <Link href="/dashboard" className="flex items-center gap-3 min-w-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 shadow-lg">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 shadow-lg">
             <Zap className="h-4 w-4 text-white" />
           </div>
           <AnimatePresence>
@@ -106,7 +119,7 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
                 transition={{ duration: 0.15 }}
                 className="text-base font-bold tracking-tight text-white"
               >
-                Scholar<span className="text-violet-400">Flow</span>
+                Scholar<span className="text-emerald-400">Flow</span>
               </motion.span>
             )}
           </AnimatePresence>
@@ -152,7 +165,7 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
             {group.items.map((item) => {
               const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
               const Icon = item.icon
-              const isLocked = item.proOnly && plan === 'free'
+
 
               return (
                 <Link
@@ -177,7 +190,7 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
                   <div
                     className={cn(
                       'relative flex h-5 w-5 shrink-0 items-center justify-center',
-                      isActive && item.highlight && 'text-violet-400',
+                      isActive && item.highlight && 'text-emerald-400',
                       isActive && !item.highlight && 'text-white',
                     )}
                   >
@@ -198,12 +211,8 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
                     )}
                   </AnimatePresence>
 
-                  {!collapsed && isLocked && (
-                    <Lock className="relative h-3 w-3 shrink-0 text-white/25" />
-                  )}
-
-                  {!collapsed && !isLocked && item.badge && (
-                    <span className="relative flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-500/20 px-1.5 text-[10px] font-bold text-violet-300">
+                  {!collapsed && item.badge && (
+                    <span className="relative flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500/20 px-1.5 text-[10px] font-bold text-emerald-300">
                       {item.badge}
                     </span>
                   )}
@@ -211,7 +220,7 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
                   {/* Tooltip for collapsed state */}
                   {collapsed && (
                     <div className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-white shadow-lg group-hover:block">
-                      {item.label}{isLocked ? ' (Pro)' : ''}
+                      {item.label}
                     </div>
                   )}
                 </Link>
@@ -221,55 +230,8 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
         ))}
       </nav>
 
-      {/* Upgrade banner for free users */}
-      {plan === 'free' && !collapsed && (
-        <div className="relative mx-3 mb-2">
-          <Link
-            href="/pricing"
-            className="flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-violet-600/90 to-indigo-600/90 px-3 py-2.5 transition-opacity hover:opacity-90"
-          >
-            <Crown className="h-4 w-4 shrink-0 text-amber-300" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white">Upgrade to Pro</p>
-              <p className="text-[10px] text-violet-200">AI + Podcasts — $9.99/mo</p>
-            </div>
-          </Link>
-        </div>
-      )}
-      {plan === 'free' && collapsed && (
-        <div className="relative mx-2 mb-2">
-          <Link
-            href="/pricing"
-            className="group flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600"
-          >
-            <Crown className="h-4 w-4 text-amber-300" />
-            <div className="pointer-events-none absolute left-full ml-2 hidden whitespace-nowrap rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-white shadow-lg group-hover:block">
-              Upgrade to Pro
-            </div>
-          </Link>
-        </div>
-      )}
-
       {/* Bottom: notifications + user */}
       <div className="relative border-t border-white/5 p-3 space-y-1">
-        {plan === 'pro' && (
-          <Link
-            href="/pricing"
-            className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-amber-400/80 transition-all hover:bg-white/5 hover:text-amber-300',
-              collapsed && 'justify-center px-0'
-            )}
-          >
-            <Crown className="h-4 w-4 shrink-0" />
-            <AnimatePresence>
-              {!collapsed && (
-                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  Pro Plan
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </Link>
-        )}
         <Link
           href="/settings"
           className={cn(
@@ -298,8 +260,9 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
           )}
         >
           <Avatar className="h-7 w-7 shrink-0">
+            {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={displayName} />}
             <AvatarFallback className="text-[10px]">
-              {getInitials(mockStudent.name)}
+              {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
           <AnimatePresence>
@@ -310,8 +273,8 @@ export function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMob
                 exit={{ opacity: 0 }}
                 className="min-w-0 flex-1"
               >
-                <p className="truncate text-xs font-semibold text-white">{mockStudent.name}</p>
-                <p className="truncate text-[10px] text-white/40">{mockStudent.university.split(' ').slice(0, 2).join(' ')}</p>
+                <p className="truncate text-xs font-semibold text-white">{displayName}</p>
+                <p className="truncate text-[10px] text-white/40">{affiliation}</p>
               </motion.div>
             )}
           </AnimatePresence>

@@ -1,21 +1,20 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   BarChart3, Calculator, Award, ChevronDown, ChevronUp,
-  BookOpen, TrendingUp, Target, AlertCircle, CheckCircle2, Info,
+  BookOpen, TrendingUp, Target, AlertCircle, CheckCircle2, Info, Loader2,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore } from '@/lib/app-store'
-import { cn } from '@/lib/utils'
+import { cn, percentToLetter } from '@/lib/utils'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, Cell,
@@ -36,20 +35,6 @@ function percentToGPA(pct: number): number {
   return 0.0
 }
 
-function percentToLetter(pct: number): string {
-  if (pct >= 90) return 'A+'
-  if (pct >= 85) return 'A'
-  if (pct >= 80) return 'A-'
-  if (pct >= 75) return 'B+'
-  if (pct >= 70) return 'B'
-  if (pct >= 65) return 'B-'
-  if (pct >= 60) return 'C+'
-  if (pct >= 55) return 'C'
-  if (pct >= 50) return 'C-'
-  if (pct >= 45) return 'D'
-  return 'F'
-}
-
 function gradeColor(pct: number): string {
   if (pct >= 85) return 'text-emerald-600'
   if (pct >= 70) return 'text-blue-600'
@@ -66,37 +51,76 @@ function gradeBg(pct: number): string {
 
 // Default grading breakdown for courses without a syllabus
 const DEFAULT_BREAKDOWN = [
-  { name: 'Assignments', weight: 20 },
-  { name: 'Quizzes',     weight: 15 },
-  { name: 'Midterm',     weight: 25 },
-  { name: 'Final Exam',  weight: 40 },
+  { id: undefined, name: 'Assignments', weight: 20 },
+  { id: undefined, name: 'Quizzes',     weight: 15 },
+  { id: undefined, name: 'Midterm',     weight: 25 },
+  { id: undefined, name: 'Final Exam',  weight: 40 },
 ]
 
 // ─── Single Course Calculator ────────────────────────────────────────────────
 
 function SingleCourseCalculator() {
-  const { courses } = useAppStore()
+  const { courses, gradeEntries, saveGrade } = useAppStore()
   const active = courses.filter((c) => c.status === 'active')
 
   const [selectedId, setSelectedId] = useState<string>(active[0]?.id ?? '')
   const [grades, setGrades] = useState<Record<string, string>>({})  // componentIndex_courseId -> score string
   const [targetGrade, setTargetGrade] = useState<string>('80')
+  const [gradeSaveStatus, setGradeSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [gradeSaveError, setGradeSaveError] = useState<string | null>(null)
 
-  const course = active.find((c) => c.id === selectedId)
+  const selectedCourseId = active.some((item) => item.id === selectedId)
+    ? selectedId
+    : active[0]?.id ?? ''
+  const course = active.find((c) => c.id === selectedCourseId)
   const breakdown = course?.gradingBreakdown?.length
     ? course.gradingBreakdown
     : DEFAULT_BREAKDOWN
 
   // key for each row
-  function key(i: number) { return `${selectedId}-${i}` }
+  function key(i: number) { return `${selectedCourseId}-${i}` }
+
+  function getGradeValue(index: number): string {
+    const draft = grades[key(index)]
+    if (draft !== undefined) return draft
+
+    const row = breakdown[index]
+    const entry = gradeEntries.find((item) =>
+      item.courseId === selectedCourseId
+      && item.title.toLowerCase() === row.name.toLowerCase()
+      && ((!row.id && item.categoryName.toLowerCase() === row.name.toLowerCase()) || item.categoryId === row.id)
+    )
+    return entry?.score !== undefined ? String((entry.score / entry.maxScore) * 100) : ''
+  }
 
   // Parse entered grade (0-100) or null
   function getScore(i: number): number | null {
-    const val = grades[key(i)]
+    const val = getGradeValue(i)
     if (!val || val.trim() === '') return null
     const n = parseFloat(val)
     if (isNaN(n)) return null
     return Math.max(0, Math.min(100, n))
+  }
+
+  async function persistScore(index: number) {
+    if (!course) return
+    const row = breakdown[index]
+    setGradeSaveStatus('saving')
+    setGradeSaveError(null)
+    try {
+      await saveGrade({
+        courseId: course.id,
+        categoryId: row.id,
+        categoryName: row.name,
+        weight: row.weight,
+        score: getScore(index),
+      })
+      setGradeSaveStatus('saved')
+      window.setTimeout(() => setGradeSaveStatus('idle'), 1800)
+    } catch (error) {
+      setGradeSaveStatus('error')
+      setGradeSaveError(error instanceof Error ? error.message : 'Could not save grade')
+    }
   }
 
   // Weighted contribution of graded items so far
@@ -133,7 +157,7 @@ function SingleCourseCalculator() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex-1">
           <Label className="text-xs font-medium mb-1.5 block">Select Course</Label>
-          <Select value={selectedId} onValueChange={(v) => { setSelectedId(v); setGrades({}) }}>
+          <Select value={selectedCourseId} onValueChange={setSelectedId}>
             <SelectTrigger className="h-10">
               <SelectValue placeholder="Choose a course" />
             </SelectTrigger>
@@ -184,6 +208,12 @@ function SingleCourseCalculator() {
             </div>
           )}
 
+          <div className="flex min-h-5 items-center justify-end gap-1.5 text-[11px]">
+            {gradeSaveStatus === 'saving' && <><Loader2 className="h-3 w-3 animate-spin text-emerald-600" /><span className="text-slate-500">Saving grade…</span></>}
+            {gradeSaveStatus === 'saved' && <><CheckCircle2 className="h-3 w-3 text-emerald-600" /><span className="text-emerald-600">Grade saved</span></>}
+            {gradeSaveStatus === 'error' && <span className="text-rose-600">{gradeSaveError}</span>}
+          </div>
+
           {/* Grade entry table */}
           <div className="rounded-2xl border border-slate-100 overflow-hidden">
             <div className="grid grid-cols-[1fr_60px_110px_80px] gap-0 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
@@ -223,8 +253,9 @@ function SingleCourseCalculator() {
                       min="0"
                       max="100"
                       placeholder="—"
-                      value={grades[key(i)] ?? ''}
+                      value={getGradeValue(i)}
                       onChange={(e) => setGrades((prev) => ({ ...prev, [key(i)]: e.target.value }))}
+                      onBlur={() => void persistScore(i)}
                       className="h-8 w-24 rounded-lg text-center text-sm"
                     />
                   </div>
@@ -276,8 +307,8 @@ function SingleCourseCalculator() {
             </div>
 
             {/* Projected final */}
-            <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4 text-center">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-400 mb-2">Projected Final</p>
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-center">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400 mb-2">Projected Final</p>
               {projected !== null ? (
                 <>
                   <p className={cn('text-3xl font-extrabold', gradeColor(projected))}>
@@ -286,12 +317,12 @@ function SingleCourseCalculator() {
                   <p className={cn('mt-1 text-sm font-bold', gradeColor(projected))}>
                     {percentToLetter(projected)} · GPA {percentToGPA(projected).toFixed(1)}
                   </p>
-                  <p className="mt-1 text-[10px] text-violet-400">
+                  <p className="mt-1 text-[10px] text-emerald-400">
                     Assuming {currentAvg!.toFixed(0)}% on remaining
                   </p>
                 </>
               ) : (
-                <p className="text-violet-300 text-sm">Pending grades</p>
+                <p className="text-emerald-300 text-sm">Pending grades</p>
               )}
             </div>
 
@@ -300,7 +331,7 @@ function SingleCourseCalculator() {
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">GPA Points</p>
               {projected !== null ? (
                 <>
-                  <p className="text-3xl font-extrabold text-indigo-600">
+                  <p className="text-3xl font-extrabold text-green-600">
                     {(percentToGPA(projected) * course.credits).toFixed(2)}
                   </p>
                   <p className="mt-1 text-sm font-medium text-slate-500">
@@ -317,18 +348,18 @@ function SingleCourseCalculator() {
           </div>
 
           {/* Target grade calculator */}
-          <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 p-5">
+          <div className="rounded-2xl border border-green-100 bg-gradient-to-r from-green-50 to-emerald-50 p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Target className="h-4 w-4 text-indigo-600" />
-              <p className="text-sm font-bold text-indigo-800">Target Grade Calculator</p>
+              <Target className="h-4 w-4 text-green-600" />
+              <p className="text-sm font-bold text-green-800">Target Grade Calculator</p>
             </div>
-            <p className="text-xs text-indigo-600/70 mb-4">
+            <p className="text-xs text-green-600/70 mb-4">
               What do you need on the remaining {ungradedWeight}% of your grade to hit your target?
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex-1">
-                <Label className="text-xs font-medium mb-1.5 block text-indigo-700">Target Final Grade (%)</Label>
+                <Label className="text-xs font-medium mb-1.5 block text-green-700">Target Final Grade (%)</Label>
                 <Input
                   type="number"
                   min="0"
@@ -377,24 +408,85 @@ function SingleCourseCalculator() {
 // ─── Semester GPA Calculator ─────────────────────────────────────────────────
 
 function SemesterCalculator() {
-  const { courses } = useAppStore()
+  const { courses, gradeEntries, saveGrade } = useAppStore()
   const active = courses.filter((c) => c.status === 'active')
 
   // courseId -> percentage grade string
-  const [grades, setGrades] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {}
-    active.forEach((c) => {
-      if (c.currentGrade !== undefined) init[c.id] = String(c.currentGrade)
-    })
-    return init
-  })
+  const [grades, setGrades] = useState<Record<string, string>>({})
 
   const [expanded, setExpanded] = useState<string | null>(null)
   // Per-course component grades: courseId-componentIndex -> score
   const [compGrades, setCompGrades] = useState<Record<string, string>>({})
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [gradeError, setGradeError] = useState<string | null>(null)
+
+  function getOverallGradeValue(courseId: string): string {
+    const draft = grades[courseId]
+    if (draft !== undefined) return draft
+    const currentGrade = active.find((course) => course.id === courseId)?.currentGrade
+    return currentGrade !== undefined ? String(currentGrade) : ''
+  }
+
+  function getComponentGradeValue(course: typeof active[0], index: number): string {
+    const entryKey = `${course.id}-comp-${index}`
+    const draft = compGrades[entryKey]
+    if (draft !== undefined) return draft
+
+    const category = course.gradingBreakdown?.[index]
+    if (!category) return ''
+    const entry = gradeEntries.find((item) =>
+      item.courseId === course.id
+      && item.title.toLowerCase() === category.name.toLowerCase()
+      && ((!category.id && item.categoryName.toLowerCase() === category.name.toLowerCase()) || item.categoryId === category.id)
+    )
+    return entry?.score !== undefined ? String((entry.score / entry.maxScore) * 100) : ''
+  }
+
+  async function persistComponent(courseId: string, index: number) {
+    const course = courses.find((item) => item.id === courseId)
+    const category = course?.gradingBreakdown?.[index]
+    if (!course || !category) return
+    const entryKey = `${course.id}-comp-${index}`
+    const raw = getComponentGradeValue(course, index)
+    const parsed = raw?.trim() ? Number.parseFloat(raw) : null
+    setSavingKey(entryKey)
+    setGradeError(null)
+    try {
+      await saveGrade({
+        courseId,
+        categoryId: category.id,
+        categoryName: category.name,
+        weight: category.weight,
+        score: parsed !== null && Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null,
+      })
+    } catch (error) {
+      setGradeError(error instanceof Error ? error.message : 'Could not save grade')
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  async function persistOverall(courseId: string) {
+    const raw = getOverallGradeValue(courseId)
+    const parsed = raw?.trim() ? Number.parseFloat(raw) : null
+    setSavingKey(courseId)
+    setGradeError(null)
+    try {
+      await saveGrade({
+        courseId,
+        categoryName: 'Overall',
+        weight: 100,
+        score: parsed !== null && Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null,
+      })
+    } catch (error) {
+      setGradeError(error instanceof Error ? error.message : 'Could not save grade')
+    } finally {
+      setSavingKey(null)
+    }
+  }
 
   function getPercent(courseId: string): number | null {
-    const val = grades[courseId]
+    const val = getOverallGradeValue(courseId)
     if (!val || val.trim() === '') return null
     const n = parseFloat(val)
     return isNaN(n) ? null : Math.max(0, Math.min(100, n))
@@ -409,8 +501,7 @@ function SemesterCalculator() {
     let gradedWeight = 0
 
     breakdown.forEach((row, i) => {
-      const k = `${course.id}-comp-${i}`
-      const val = compGrades[k]
+      const val = getComponentGradeValue(course, i)
       if (!val || val.trim() === '') return
       const score = parseFloat(val)
       if (isNaN(score)) return
@@ -455,7 +546,7 @@ function SemesterCalculator() {
             label: 'Semester GPA',
             value: semGPA !== null ? semGPA.toFixed(2) : '—',
             sub: semGPA !== null && semGPA >= 3.7 ? "Dean's List" : semGPA !== null && semGPA >= 2.0 ? 'Good Standing' : '—',
-            color: 'from-violet-500 to-indigo-500',
+            color: 'from-emerald-500 to-green-500',
             icon: Award,
           },
           {
@@ -524,7 +615,11 @@ function SemesterCalculator() {
 
       {/* Course table */}
       <div className="space-y-3">
-        <h3 className="text-sm font-bold text-slate-700">Course Grade Entry</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-bold text-slate-700">Course Grade Entry</h3>
+          {savingKey && <span className="flex items-center gap-1 text-[11px] text-slate-400"><Loader2 className="h-3 w-3 animate-spin" />Saving…</span>}
+          {!savingKey && gradeError && <span className="text-[11px] text-rose-600">{gradeError}</span>}
+        </div>
         {active.map((course) => {
           const breakdown = course.gradingBreakdown?.length ? course.gradingBreakdown : null
           const isExpanded = expanded === course.id
@@ -558,7 +653,7 @@ function SemesterCalculator() {
                         {row.pct.toFixed(1)}%
                       </span>
                       {row.computed !== null && (
-                        <Badge className="text-[9px] border-0 bg-violet-100 text-violet-700">auto</Badge>
+                        <Badge className="text-[9px] border-0 bg-emerald-100 text-emerald-700">auto</Badge>
                       )}
                     </div>
                   )}
@@ -573,8 +668,9 @@ function SemesterCalculator() {
                         min="0"
                         max="100"
                         placeholder="Grade %"
-                        value={grades[course.id] ?? ''}
+                        value={getOverallGradeValue(course.id)}
                         onChange={(e) => setGrades((prev) => ({ ...prev, [course.id]: e.target.value }))}
+                        onBlur={() => void persistOverall(course.id)}
                         className="h-8 w-24 text-center text-sm"
                       />
                     </div>
@@ -599,7 +695,7 @@ function SemesterCalculator() {
                   <div className="space-y-2">
                     {breakdown.map((row, i) => {
                       const k = `${course.id}-comp-${i}`
-                      const val = compGrades[k]
+                      const val = getComponentGradeValue(course, i)
                       const score = val ? parseFloat(val) : NaN
                       const contribution = !isNaN(score) ? (Math.max(0, Math.min(100, score)) * row.weight) / 100 : null
 
@@ -614,8 +710,9 @@ function SemesterCalculator() {
                             min="0"
                             max="100"
                             placeholder="Score %"
-                            value={compGrades[k] ?? ''}
+                            value={getComponentGradeValue(course, i)}
                             onChange={(e) => setCompGrades((prev) => ({ ...prev, [k]: e.target.value }))}
+                            onBlur={() => void persistComponent(course.id, i)}
                             className="h-8 w-24 text-center text-sm"
                           />
                           <div className="w-16 text-right">
@@ -659,7 +756,7 @@ function SemesterCalculator() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Calculator className="h-4 w-4 text-violet-600" />
+              <Calculator className="h-4 w-4 text-emerald-600" />
               Credit-Weighted GPA Calculation
             </CardTitle>
           </CardHeader>
@@ -700,7 +797,7 @@ function SemesterCalculator() {
                       </td>
                       <td className="py-2.5 text-right">
                         {pct !== null
-                          ? <span className="font-bold text-indigo-600">{(percentToGPA(pct) * course.credits).toFixed(2)}</span>
+                          ? <span className="font-bold text-green-600">{(percentToGPA(pct) * course.credits).toFixed(2)}</span>
                           : <span className="text-slate-300">—</span>}
                       </td>
                     </tr>
@@ -721,9 +818,9 @@ function SemesterCalculator() {
                       )}
                     </td>
                     <td className="py-3 text-center">
-                      {semGPA !== null && <span className="text-lg font-extrabold text-violet-700">{semGPA.toFixed(2)}</span>}
+                      {semGPA !== null && <span className="text-lg font-extrabold text-emerald-700">{semGPA.toFixed(2)}</span>}
                     </td>
-                    <td className="py-3 text-right font-extrabold text-indigo-600">{totalQP.toFixed(2)}</td>
+                    <td className="py-3 text-right font-extrabold text-green-600">{totalQP.toFixed(2)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -733,7 +830,7 @@ function SemesterCalculator() {
               <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500 mt-0.5" />
               <p className="text-[10px] leading-relaxed text-amber-700">
                 GPA scale: A+ 90% = 4.0 · A 85% = 3.7 · A– 80% = 3.3 · B+ 75% = 3.0 · B 70% = 2.7 · B– 65% = 2.3 · C+ 60% = 2.0 · C 55% = 1.7 · D 50% = 1.0 · F &lt;50% = 0.0.
-                Verify with your university's official grading policy.
+                Verify with your university&apos;s official grading policy.
               </p>
             </div>
           </CardContent>

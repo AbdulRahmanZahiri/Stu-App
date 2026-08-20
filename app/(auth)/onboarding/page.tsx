@@ -45,10 +45,10 @@ const goals = [
 ]
 
 const stepColors = [
-  'from-violet-500 to-indigo-500',
-  'from-indigo-500 to-blue-500',
+  'from-emerald-500 to-green-500',
+  'from-green-500 to-blue-500',
   'from-blue-500 to-cyan-500',
-  'from-purple-500 to-violet-500',
+  'from-purple-500 to-emerald-500',
 ]
 
 export default function OnboardingPage() {
@@ -84,20 +84,51 @@ export default function OnboardingPage() {
     setLoading(true)
     setError(null)
 
-    const { data: { user }, error: signUpError } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: { data: { name: form.name } },
-    })
-
-    if (signUpError || !user) {
-      setError(signUpError?.message ?? 'Failed to create account. Please try again.')
+    // Step 1: Create account via server-side admin route (no email confirmation needed)
+    let userId: string
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          name: form.name,
+          studentId: form.studentId,
+          university: form.university,
+          major: form.major,
+          year: form.year,
+          semester: form.semester,
+          goals: form.goals,
+        }),
+      })
+      const json = await res.json() as { userId?: string; error?: string }
+      if (!res.ok || !json.userId) {
+        setError(json.error ?? 'Failed to create account. Please try again.')
+        setLoading(false)
+        return
+      }
+      userId = json.userId
+    } catch {
+      setError('Cannot reach the server. Please check your internet connection.')
       setLoading(false)
       return
     }
 
-    const { error: profileError } = await supabase.from('student_profiles').insert({
-      id: user.id,
+    // Step 2: Sign in immediately — account is already confirmed, no email needed
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: form.email,
+      password: form.password,
+    })
+    if (signInError) {
+      setError('Account created! Go to sign in page.')
+      router.push('/login?registered=1')
+      return
+    }
+
+    // Step 3: Upsert student profile (in case the DB trigger hasn't run)
+    await supabase.from('student_profiles').upsert({
+      id: userId,
       name: form.name.trim(),
       email: form.email.trim(),
       student_id: form.studentId.trim() || null,
@@ -106,13 +137,7 @@ export default function OnboardingPage() {
       year_of_study: form.year ? parseInt(form.year) : null,
       semester: form.semester || null,
       goals: form.goals,
-    })
-
-    if (profileError) {
-      setError(profileError.message)
-      setLoading(false)
-      return
-    }
+    }, { onConflict: 'id' })
 
     router.push('/dashboard')
     router.refresh()
@@ -122,17 +147,17 @@ export default function OnboardingPage() {
   const currentColor = stepColors[step - 1]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-violet-950/60 to-indigo-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-emerald-950/60 to-green-950 flex items-center justify-center p-4">
       {/* Background orbs */}
       <motion.div
         animate={{ scale: [1, 1.1, 1], opacity: [0.15, 0.25, 0.15] }}
         transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-        className="pointer-events-none fixed left-[5%] top-[10%] h-96 w-96 rounded-full bg-violet-600/20 blur-3xl"
+        className="pointer-events-none fixed left-[5%] top-[10%] h-96 w-96 rounded-full bg-emerald-600/20 blur-3xl"
       />
       <motion.div
         animate={{ scale: [1, 1.15, 1], opacity: [0.1, 0.2, 0.1] }}
         transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
-        className="pointer-events-none fixed bottom-[10%] right-[5%] h-80 w-80 rounded-full bg-indigo-600/20 blur-3xl"
+        className="pointer-events-none fixed bottom-[10%] right-[5%] h-80 w-80 rounded-full bg-green-600/20 blur-3xl"
       />
 
       <div className="relative z-10 w-full max-w-lg">
@@ -146,7 +171,7 @@ export default function OnboardingPage() {
             <Zap className="h-5 w-5 text-white" />
           </div>
           <span className="text-xl font-bold tracking-tight text-white">
-            Scholar<span className="text-violet-400">Flow</span>
+            Scholar<span className="text-emerald-400">Flow</span>
           </span>
         </motion.div>
 
@@ -173,14 +198,14 @@ export default function OnboardingPage() {
                   s.id < step
                     ? `border-transparent bg-gradient-to-br ${stepColors[s.id - 1]} text-white shadow-lg`
                     : s.id === step
-                    ? `border-transparent bg-gradient-to-br ${currentColor} text-white ring-4 ring-violet-500/20`
+                    ? `border-transparent bg-gradient-to-br ${currentColor} text-white ring-4 ring-emerald-500/20`
                     : 'border-white/20 bg-white/5 text-white/30'
                 )}>
                   {s.id < step ? <Check className="h-3.5 w-3.5" /> : s.id}
                 </div>
                 <span className={cn(
                   'hidden text-[10px] font-medium sm:block transition-colors',
-                  s.id === step ? 'text-white' : s.id < step ? 'text-violet-400' : 'text-white/30'
+                  s.id === step ? 'text-white' : s.id < step ? 'text-emerald-400' : 'text-white/30'
                 )}>
                   {s.title}
                 </span>
@@ -211,7 +236,7 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              {error && step === 4 && (
+              {error && (
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -236,7 +261,7 @@ export default function OnboardingPage() {
                         placeholder={placeholder}
                         value={form[key as keyof typeof form] as string}
                         onChange={(e) => update(key, e.target.value)}
-                        className="h-11 rounded-xl border-white/10 bg-white/8 text-white placeholder:text-white/25 focus-visible:border-violet-400 focus-visible:ring-1 focus-visible:ring-violet-400/30"
+                        className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white placeholder:text-white/30 focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/30 autofill:bg-slate-800"
                       />
                     </div>
                   ))}
@@ -248,7 +273,8 @@ export default function OnboardingPage() {
                         placeholder="Min. 6 characters"
                         value={form.password}
                         onChange={(e) => update('password', e.target.value)}
-                        className="h-11 rounded-xl border-white/10 bg-white/8 pr-11 text-white placeholder:text-white/25 focus-visible:border-violet-400 focus-visible:ring-1 focus-visible:ring-violet-400/30"
+                        autoComplete="new-password"
+                        className="h-11 rounded-xl border-white/10 bg-slate-800/70 pr-11 text-white placeholder:text-white/30 focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/30 [&:-webkit-autofill]:[-webkit-text-fill-color:white] [&:-webkit-autofill]:[box-shadow:0_0_0_1000px_rgb(30_41_59/0.7)_inset]"
                       />
                       <button
                         type="button"
@@ -270,7 +296,7 @@ export default function OnboardingPage() {
                       placeholder="202312345"
                       value={form.studentId}
                       onChange={(e) => update('studentId', e.target.value)}
-                      className="h-11 rounded-xl border-white/10 bg-white/8 text-white placeholder:text-white/25 focus-visible:border-violet-400 focus-visible:ring-1 focus-visible:ring-violet-400/30"
+                      className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white placeholder:text-white/30 focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/30 autofill:bg-slate-800"
                     />
                   </div>
                 </div>
@@ -282,7 +308,7 @@ export default function OnboardingPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold uppercase tracking-wider text-white/50">University / College</Label>
                     <Select onValueChange={(v) => update('university', v)}>
-                      <SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/8 text-white focus:ring-violet-400/30">
+                      <SelectTrigger className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white focus:ring-emerald-400/30">
                         <SelectValue placeholder="Select your university" />
                       </SelectTrigger>
                       <SelectContent>
@@ -296,7 +322,7 @@ export default function OnboardingPage() {
                       placeholder="e.g., Memorial University"
                       value={form.university}
                       onChange={(e) => update('university', e.target.value)}
-                      className="h-11 rounded-xl border-white/10 bg-white/8 text-white placeholder:text-white/25 focus-visible:border-violet-400 focus-visible:ring-1 focus-visible:ring-violet-400/30"
+                      className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white placeholder:text-white/30 focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/30 autofill:bg-slate-800"
                     />
                   </div>
                 </div>
@@ -308,7 +334,7 @@ export default function OnboardingPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold uppercase tracking-wider text-white/50">Major / Program</Label>
                     <Select onValueChange={(v) => update('major', v)}>
-                      <SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/8 text-white focus:ring-violet-400/30">
+                      <SelectTrigger className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white focus:ring-emerald-400/30">
                         <SelectValue placeholder="Select your major" />
                       </SelectTrigger>
                       <SelectContent>
@@ -320,7 +346,7 @@ export default function OnboardingPage() {
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold uppercase tracking-wider text-white/50">Year</Label>
                       <Select onValueChange={(v) => update('year', v)}>
-                        <SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/8 text-white focus:ring-violet-400/30">
+                        <SelectTrigger className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white focus:ring-emerald-400/30">
                           <SelectValue placeholder="Year" />
                         </SelectTrigger>
                         <SelectContent>
@@ -331,7 +357,7 @@ export default function OnboardingPage() {
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold uppercase tracking-wider text-white/50">Semester</Label>
                       <Select onValueChange={(v) => update('semester', v)}>
-                        <SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/8 text-white focus:ring-violet-400/30">
+                        <SelectTrigger className="h-11 rounded-xl border-white/10 bg-slate-800/70 text-white focus:ring-emerald-400/30">
                           <SelectValue placeholder="Term" />
                         </SelectTrigger>
                         <SelectContent>
@@ -359,14 +385,14 @@ export default function OnboardingPage() {
                         className={cn(
                           'flex items-center gap-3 rounded-xl border p-3 text-left text-sm font-medium transition-all duration-150',
                           form.goals.includes(g.id)
-                            ? 'border-violet-400/50 bg-violet-500/20 text-white'
-                            : 'border-white/10 bg-white/5 text-white/60 hover:border-violet-400/30 hover:bg-white/8'
+                            ? 'border-emerald-400/50 bg-emerald-500/20 text-white'
+                            : 'border-white/10 bg-white/5 text-white/60 hover:border-emerald-400/30 hover:bg-white/8'
                         )}
                       >
                         <span className="text-lg">{g.icon}</span>
                         <span className="text-xs leading-tight">{g.label}</span>
                         {form.goals.includes(g.id) && (
-                          <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-violet-400" />
+                          <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-emerald-400" />
                         )}
                       </button>
                     ))}
@@ -394,7 +420,7 @@ export default function OnboardingPage() {
                 className={cn(
                   'flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200',
                   canContinue()
-                    ? `bg-gradient-to-r ${currentColor} shadow-violet-500/25 hover:shadow-violet-500/40 hover:scale-[1.02]`
+                    ? `bg-gradient-to-r ${currentColor} shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:scale-[1.02]`
                     : 'bg-white/10 cursor-not-allowed opacity-50'
                 )}
               >
@@ -405,7 +431,7 @@ export default function OnboardingPage() {
               <button
                 onClick={handleFinish}
                 disabled={loading}
-                className={`flex items-center gap-2 rounded-xl bg-gradient-to-r ${currentColor} px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-200 hover:shadow-violet-500/40 hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed`}
+                className={`flex items-center gap-2 rounded-xl bg-gradient-to-r ${currentColor} px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all duration-200 hover:shadow-emerald-500/40 hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed`}
               >
                 {loading ? (
                   <>
@@ -425,7 +451,7 @@ export default function OnboardingPage() {
 
         <p className="mt-6 text-center text-xs text-white/30">
           Already have an account?{' '}
-          <Link href="/login" className="font-semibold text-violet-400 hover:text-violet-300 transition-colors">
+          <Link href="/login" className="font-semibold text-emerald-400 hover:text-emerald-300 transition-colors">
             Sign in
           </Link>
         </p>

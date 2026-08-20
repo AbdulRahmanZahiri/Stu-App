@@ -3,8 +3,8 @@
 import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
-  BookOpen, Upload, Plus, CheckCircle2,
-  Clock, ChevronRight, FileText, Check, Loader2, AlertCircle,
+  Upload, Plus, CheckCircle2,
+  Clock, ChevronRight, Check, Loader2, AlertCircle,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -40,13 +40,16 @@ interface ParsedSyllabus {
 }
 
 export default function CoursesPage() {
-  const { courses, addTasks, updateCourse, addCourse: storeAddCourse } = useAppStore()
+  const { courses, addCourse: storeAddCourse, saveSyllabusImport } = useAppStore()
   const [uploadingCourse, setUploadingCourse] = useState<Course | null>(null)
   const [uploadState, setUploadState] = useState<UploadState>('idle')
   const [dragOver, setDragOver] = useState(false)
   const [parsed, setParsed] = useState<ParsedSyllabus | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [parseWarning, setParseWarning] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string>('')
+  const [sourceFile, setSourceFile] = useState<File | null>(null)
+  const [saving, setSaving] = useState(false)
   const [uploadTab, setUploadTab] = useState<UploadTab>('file')
   const [pasteText, setPasteText] = useState('')
   const [showAddCourse, setShowAddCourse] = useState(false)
@@ -56,7 +59,7 @@ export default function CoursesPage() {
   function handleAddCourse() {
     if (!newCourse.code.trim() || !newCourse.name.trim()) return
     const course: Course = {
-      id: `course-${Date.now()}`,
+      id: crypto.randomUUID(),
       studentId: 'student-001',
       code: newCourse.code.trim().toUpperCase(),
       name: newCourse.name.trim(),
@@ -78,6 +81,7 @@ export default function CoursesPage() {
   async function parseSyllabusText(text: string, name: string) {
     setUploadState('parsing')
     setParseError(null)
+    setParseWarning(null)
     setParsed(null)
 
     try {
@@ -89,6 +93,7 @@ export default function CoursesPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to parse syllabus')
       setParsed(data.data)
+      setParseWarning(typeof data.warning === 'string' ? data.warning : null)
       setUploadState('done')
     } catch (err) {
       setParseError(err instanceof Error ? err.message : 'Something went wrong')
@@ -98,15 +103,28 @@ export default function CoursesPage() {
 
   async function handleFile(file: File) {
     setFileName(file.name)
+    setSourceFile(file)
     setUploadState('reading')
     setParseError(null)
+    setParseWarning(null)
     setParsed(null)
+
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (file.size > 10 * 1024 * 1024) {
+      setParseError('Files must be under 10 MB.')
+      setUploadState('error')
+      return
+    }
+    if (!['pdf', 'docx', 'txt', 'md'].includes(ext) && file.type !== 'application/pdf' && !file.type.startsWith('text/')) {
+      setParseError('Supported files are PDF, DOCX, TXT, and Markdown.')
+      setUploadState('error')
+      return
+    }
 
     try {
       let text: string
 
-      if (file.type === 'application/pdf') {
-        // Extract text server-side via pdf-parse
+      if (file.type === 'application/pdf' || ext === 'pdf' || ext === 'docx') {
         const form = new FormData()
         form.append('file', file)
         const res = await fetch('/api/extract-pdf', { method: 'POST', body: form })
@@ -131,6 +149,7 @@ export default function CoursesPage() {
       return
     }
     setFileName('pasted-syllabus.txt')
+    setSourceFile(null)
     setUploadState('reading')
     await parseSyllabusText(pasteText.trim(), uploadingCourse?.code ?? 'syllabus')
   }
@@ -149,26 +168,25 @@ export default function CoursesPage() {
     setUploadState('idle')
     setParsed(null)
     setParseError(null)
+    setParseWarning(null)
     setFileName('')
+    setSourceFile(null)
+    setSaving(false)
     setPasteText('')
     setUploadTab('file')
   }
 
-  function confirmSave() {
+  async function confirmSave() {
     if (!uploadingCourse || !parsed) return
 
-    updateCourse(uploadingCourse.id, {
-      syllabusUploaded: true,
-      instructor: parsed.instructor ?? uploadingCourse.instructor,
-      gradingBreakdown: parsed.gradingBreakdown?.length
-        ? parsed.gradingBreakdown
-        : undefined,
-    })
-
     const newTasks: Task[] = (parsed.keyDates ?? [])
-      .filter((kd) => kd.title && kd.date)
+      .filter((kd) => {
+        if (!kd.title || !kd.date) return false
+        const d = new Date(kd.date)
+        return !isNaN(d.getTime())  // skip dates the AI made up like "Week 5" or "TBD"
+      })
       .map((kd) => ({
-        id: `syllabus-${uploadingCourse.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id: crypto.randomUUID(),
         studentId: 'student-001',
         courseId: uploadingCourse.id,
         title: kd.title,
@@ -183,17 +201,30 @@ export default function CoursesPage() {
         courseCode: uploadingCourse.code,
         courseColor: uploadingCourse.color,
         courseName: uploadingCourse.name,
-        tags: [],
+        tags: ['syllabus-import'],
       }))
 
-    if (newTasks.length > 0) {
-      addTasks(newTasks)
-      toast.success(`Syllabus saved! Added ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} from ${uploadingCourse.code}`)
-    } else {
-      toast.success(`Syllabus saved for ${uploadingCourse.code}`)
+    setSaving(true)
+    try {
+      await saveSyllabusImport({
+        courseId: uploadingCourse.id,
+        file: sourceFile,
+        fileName: fileName || 'pasted-syllabus.txt',
+        extractedData: { ...parsed },
+        gradingBreakdown: parsed.gradingBreakdown ?? [],
+        tasks: newTasks,
+      })
+      if (newTasks.length > 0) {
+        toast.success(`Syllabus saved! Added ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} from ${uploadingCourse.code}`)
+      } else {
+        toast.success(`Syllabus saved for ${uploadingCourse.code}`)
+      }
+      resetDialog()
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : 'Could not save the syllabus')
+      setUploadState('error')
+      setSaving(false)
     }
-
-    resetDialog()
   }
 
   return (
@@ -232,11 +263,12 @@ export default function CoursesPage() {
       <input
         ref={fileRef}
         type="file"
-        accept=".pdf,.txt,.docx,.doc"
+        accept=".pdf,.docx,.txt,.md"
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) handleFile(file)
+          const file = e.currentTarget.files?.[0]
+          e.currentTarget.value = ''
+          if (file) void handleFile(file)
         }}
       />
 
@@ -256,13 +288,13 @@ export default function CoursesPage() {
               <div className="mb-4 flex rounded-xl border border-slate-100 bg-slate-50 p-1">
                 <button
                   onClick={() => setUploadTab('file')}
-                  className={cn('flex-1 rounded-lg py-2 text-xs font-semibold transition-all', uploadTab === 'file' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
+                  className={cn('flex-1 rounded-lg py-2 text-xs font-semibold transition-all', uploadTab === 'file' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
                 >
                   Upload File
                 </button>
                 <button
                   onClick={() => setUploadTab('paste')}
-                  className={cn('flex-1 rounded-lg py-2 text-xs font-semibold transition-all', uploadTab === 'paste' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
+                  className={cn('flex-1 rounded-lg py-2 text-xs font-semibold transition-all', uploadTab === 'paste' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}
                 >
                   Paste Text
                 </button>
@@ -280,16 +312,16 @@ export default function CoursesPage() {
                   }}
                   className={cn(
                     'relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all cursor-pointer',
-                    dragOver ? 'border-violet-400 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-slate-50'
+                    dragOver ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
                   )}
                   onClick={() => fileRef.current?.click()}
                 >
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100">
-                    <Upload className="h-6 w-6 text-violet-600" />
+                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
+                    <Upload className="h-6 w-6 text-emerald-600" />
                   </div>
                   <p className="text-sm font-semibold text-slate-700">Drop your syllabus here</p>
                   <p className="mt-1 text-xs text-slate-400">or click to browse</p>
-                  <p className="mt-3 text-[11px] text-slate-300">PDF, DOCX, or TXT · Max 20 MB</p>
+                  <p className="mt-3 text-[11px] text-slate-300">PDF, DOCX, TXT, or Markdown · Max 10 MB</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -300,7 +332,7 @@ export default function CoursesPage() {
                     value={pasteText}
                     onChange={(e) => setPasteText(e.target.value)}
                     placeholder="Paste your syllabus text here..."
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:outline-none resize-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:bg-white focus:outline-none resize-none"
                     rows={8}
                   />
                   <Button
@@ -311,18 +343,18 @@ export default function CoursesPage() {
                     disabled={pasteText.trim().length < 50}
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Parse with AI
+                    Parse Syllabus
                   </Button>
                 </div>
               )}
 
-              <div className="mt-4 rounded-xl bg-violet-50 border border-violet-100 p-4">
-                <p className="text-xs font-semibold text-violet-700 mb-2">✨ What gets extracted:</p>
+              <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                <p className="text-xs font-semibold text-emerald-700 mb-2">✨ What gets extracted:</p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {['Assignments & deadlines', 'Grade weights', 'Quiz & exam dates', 'Instructor info', 'Course policies', 'Weekly schedule'].map((item) => (
                     <div key={item} className="flex items-center gap-1.5">
-                      <Check className="h-3 w-3 text-violet-500" />
-                      <span className="text-xs text-violet-600">{item}</span>
+                      <Check className="h-3 w-3 text-emerald-500" />
+                      <span className="text-xs text-emerald-600">{item}</span>
                     </div>
                   ))}
                 </div>
@@ -334,14 +366,14 @@ export default function CoursesPage() {
           {(uploadState === 'reading' || uploadState === 'parsing') && (
             <div className="flex flex-col items-center py-8 text-center">
               <div className="relative mb-6">
-                <div className="h-16 w-16 rounded-full border-4 border-violet-100" />
-                <div className="absolute inset-0 h-16 w-16 animate-spin rounded-full border-4 border-transparent border-t-violet-500" />
+                <div className="h-16 w-16 rounded-full border-4 border-emerald-100" />
+                <div className="absolute inset-0 h-16 w-16 animate-spin rounded-full border-4 border-transparent border-t-emerald-500" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Loader2 className="h-6 w-6 text-violet-500 animate-spin" />
+                  <Loader2 className="h-6 w-6 text-emerald-500 animate-spin" />
                 </div>
               </div>
               <p className="text-sm font-semibold text-slate-800">
-                {uploadState === 'reading' ? 'Reading file...' : 'Claude AI is parsing your syllabus...'}
+                {uploadState === 'reading' ? 'Reading file...' : 'Parsing your syllabus...'}
               </p>
               {fileName && <p className="mt-1 text-xs text-slate-400 truncate max-w-xs">{fileName}</p>}
               {uploadState === 'parsing' && (
@@ -355,7 +387,7 @@ export default function CoursesPage() {
                     <div key={i} className="flex items-center gap-2 text-xs">
                       {step.done
                         ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        : <div className="h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-violet-500 animate-spin" />
+                        : <div className="h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-emerald-500 animate-spin" />
                       }
                       <span className={step.done ? 'text-slate-600' : 'text-slate-400'}>{step.label}</span>
                     </div>
@@ -372,11 +404,7 @@ export default function CoursesPage() {
                 <AlertCircle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-semibold text-rose-800">Parsing failed</p>
-                  <p className="text-xs text-rose-600 mt-1">
-                    {parseError === 'AI service not configured'
-                      ? 'Add your ANTHROPIC_API_KEY to .env.local to enable AI syllabus parsing.'
-                      : parseError}
-                  </p>
+                  <p className="text-xs text-rose-600 mt-1">{parseError}</p>
                 </div>
               </div>
               <Button variant="outline" size="sm" className="w-full" onClick={() => setUploadState('idle')}>
@@ -391,16 +419,23 @@ export default function CoursesPage() {
               <div className="mb-4 flex items-center gap-3 rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
                 <CheckCircle2 className="h-8 w-8 text-emerald-500 shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-emerald-800">Syllabus parsed by Claude AI!</p>
+                  <p className="text-sm font-semibold text-emerald-800">Syllabus parsed successfully!</p>
                   {parsed.summary && <p className="text-xs text-emerald-600 mt-0.5">{parsed.summary}</p>}
                 </div>
               </div>
+
+              {parseWarning && (
+                <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{parseWarning}</span>
+                </div>
+              )}
 
               <div className="space-y-3">
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'Assignments Found', value: parsed.assignments, color: 'bg-violet-50 text-violet-700' },
+                    { label: 'Assignments Found', value: parsed.assignments, color: 'bg-emerald-50 text-emerald-700' },
                     { label: 'Deadlines Extracted', value: parsed.deadlines, color: 'bg-blue-50 text-blue-700' },
                     { label: 'Quizzes', value: parsed.quizzes, color: 'bg-amber-50 text-amber-700' },
                     { label: 'Exams', value: parsed.exams, color: 'bg-rose-50 text-rose-700' },
@@ -460,9 +495,9 @@ export default function CoursesPage() {
                   <Button variant="outline" size="sm" className="flex-1" onClick={resetDialog}>
                     Close
                   </Button>
-                  <Button variant="gradient" size="sm" className="flex-1" onClick={confirmSave}>
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Confirm & Save
+                  <Button variant="gradient" size="sm" className="flex-1" onClick={confirmSave} disabled={saving}>
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    {saving ? 'Saving...' : 'Confirm & Save'}
                   </Button>
                 </div>
               </div>
@@ -514,7 +549,7 @@ export default function CoursesPage() {
               <Label className="text-xs font-medium mb-1.5 block">Color</Label>
               <div className="flex gap-2">
                 {COURSE_COLORS.map((c) => (
-                  <button key={c} onClick={() => setNewCourse((p) => ({ ...p, color: c }))} className={cn('h-7 w-7 rounded-full transition-all', newCourse.color === c ? 'ring-2 ring-offset-2 ring-violet-500 scale-110' : 'hover:scale-105')} style={{ backgroundColor: c }} />
+                  <button key={c} onClick={() => setNewCourse((p) => ({ ...p, color: c }))} className={cn('h-7 w-7 rounded-full transition-all', newCourse.color === c ? 'ring-2 ring-offset-2 ring-emerald-500 scale-110' : 'hover:scale-105')} style={{ backgroundColor: c }} />
                 ))}
               </div>
             </div>
@@ -545,7 +580,7 @@ function CourseCard({ course, onUploadSyllabus }: { course: Course; onUploadSyll
             <h3 className="text-base font-semibold text-slate-900 leading-tight">{course.name}</h3>
             {course.instructor && <p className="mt-0.5 text-xs text-slate-400">{course.instructor}</p>}
           </div>
-          {course.currentGrade && (
+          {course.currentGrade !== undefined && (
             <div className="text-right">
               <p className="text-xl font-extrabold" style={{ color: course.color }}>{course.currentGrade}%</p>
               <p className="text-xs font-semibold text-slate-500">{course.letterGrade}</p>
@@ -561,7 +596,7 @@ function CourseCard({ course, onUploadSyllabus }: { course: Course; onUploadSyll
           </div>
         )}
 
-        {course.currentGrade && (
+        {course.currentGrade !== undefined && (
           <div className="mb-4">
             <Progress
               value={course.currentGrade}
@@ -581,14 +616,14 @@ function CourseCard({ course, onUploadSyllabus }: { course: Course; onUploadSyll
             <Button
               variant="outline"
               size="sm"
-              className="flex-1 gap-1.5 text-xs border-dashed border-violet-200 text-violet-600 hover:bg-violet-50"
+              className="flex-1 gap-1.5 text-xs border-dashed border-emerald-200 text-emerald-600 hover:bg-emerald-50"
               onClick={onUploadSyllabus}
             >
               <Upload className="h-3 w-3" />
               Upload Syllabus
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onUploadSyllabus} title={course.syllabusUploaded ? 'Replace syllabus' : 'Upload syllabus'}>
             <ChevronRight className="h-4 w-4 text-slate-400" />
           </Button>
         </div>

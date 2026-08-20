@@ -38,7 +38,7 @@ export interface Course {
   status: 'active' | 'completed' | 'dropped'
   schedule?: string
   room?: string
-  gradingBreakdown?: { name: string; weight: number }[]
+  gradingBreakdown?: { id?: string; name: string; weight: number }[]
 }
 
 export interface Syllabus {
@@ -272,12 +272,20 @@ export interface AIMessage {
   type?: 'text' | 'summary' | 'study-guide' | 'quiz' | 'flashcards'
 }
 
+export interface PodcastLine {
+  speaker: 'HOST_1' | 'HOST_2'
+  text: string
+}
+
 export interface AudioStudyItem {
   id: string
   title: string
   sourceNoteId?: string
+  sourceType?: 'note' | 'pdf' | 'text'
+  sourceName?: string
   duration?: number
   script?: string
+  dialogue?: PodcastLine[]
   audioUrl?: string
   status: 'generating' | 'ready' | 'failed'
   createdAt: Date

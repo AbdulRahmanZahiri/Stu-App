@@ -8,10 +8,17 @@ export type StudentProfile = {
   id: string
   name: string
   email: string
+  student_id?: string | null
   major?: string | null
   year_of_study?: number | null
   university_name?: string | null
+  semester?: string | null
   gpa?: number | null
+  avatar_url?: string | null
+  bio?: string | null
+  goals?: string[] | null
+  expected_graduation?: string | null
+  preferences?: Record<string, string | number | boolean> | null
   is_admin?: boolean | null
 }
 
@@ -20,6 +27,8 @@ type AuthContextType = {
   profile: StudentProfile | null
   loading: boolean
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
+  updateProfile: (patch: Partial<Omit<StudentProfile, 'id' | 'email' | 'is_admin'>>) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -27,6 +36,8 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   signOut: async () => {},
+  refreshProfile: async () => {},
+  updateProfile: async () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -34,13 +45,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<StudentProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const loadProfile = useCallback(async (userId: string) => {
-    const { data } = await supabase
+  const loadProfile = useCallback(async (authUser: User) => {
+    const { data, error } = await supabase
       .from('student_profiles')
-      .select('id, name, email, major, year_of_study, university_name, gpa, is_admin')
-      .eq('id', userId)
+      .select('*')
+      .eq('id', authUser.id)
       .single()
-    setProfile(data ?? null)
+
+    if (!error && data) {
+      setProfile(data as StudentProfile)
+      setLoading(false)
+      return
+    }
+
+    // Existing projects may not have the auth trigger yet. With an active
+    // session, RLS allows the user to repair their own missing profile.
+    if (error?.code === 'PGRST116') {
+      const metadata = authUser.user_metadata ?? {}
+      const { data: created, error: createError } = await supabase
+        .from('student_profiles')
+        .upsert({
+          id: authUser.id,
+          name: typeof metadata.name === 'string' && metadata.name.trim()
+            ? metadata.name.trim()
+            : authUser.email?.split('@')[0] ?? 'Student',
+          email: authUser.email ?? '',
+          student_id: typeof metadata.student_id === 'string' ? metadata.student_id || null : null,
+          university_name: typeof metadata.university_name === 'string' ? metadata.university_name || null : null,
+          major: typeof metadata.major === 'string' ? metadata.major || null : null,
+          year_of_study: Number.isFinite(Number(metadata.year_of_study)) ? Number(metadata.year_of_study) : null,
+          semester: typeof metadata.semester === 'string' ? metadata.semester || null : null,
+          goals: Array.isArray(metadata.goals) ? metadata.goals : [],
+        })
+        .select('*')
+        .single()
+
+      if (!createError && created) setProfile(created as StudentProfile)
+      else setProfile(null)
+    } else {
+      setProfile(null)
+    }
     setLoading(false)
   }, [])
 
@@ -49,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(({ data: { session } }) => {
         setUser(session?.user ?? null)
         if (session?.user) {
-          void loadProfile(session.user.id)
+          void loadProfile(session.user)
         } else {
           setLoading(false)
         }
@@ -64,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data } = supabase.auth.onAuthStateChange((_event, session) => {
         setUser(session?.user ?? null)
         if (session?.user) {
-          void loadProfile(session.user.id)
+          void loadProfile(session.user)
         } else {
           setProfile(null)
           setLoading(false)
@@ -82,8 +126,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  async function refreshProfile() {
+    if (user) await loadProfile(user)
+  }
+
+  async function updateProfile(patch: Partial<Omit<StudentProfile, 'id' | 'email' | 'is_admin'>>) {
+    if (!user) throw new Error('Sign in to save profile changes')
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select('*')
+      .single()
+    if (error) throw new Error(error.message)
+    setProfile(data as StudentProfile)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, signOut, refreshProfile, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

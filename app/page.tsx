@@ -3,18 +3,17 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
-  Sparkles, BookOpen, CheckSquare, BarChart3, MessageSquare,
+  Sparkles, BarChart3, MessageSquare,
   GraduationCap, Headphones, ArrowRight, Zap, Star, Users,
-  FileText, CalendarDays, Upload, Brain, Crown, Check, Lock,
+  Upload, Brain,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 
 const features = [
   {
     icon: Upload,
-    color: 'from-violet-500 to-indigo-500',
-    bg: 'bg-violet-50',
+    color: 'from-emerald-500 to-green-500',
+    bg: 'bg-emerald-50',
     title: 'Syllabus AI Parser',
     description: 'Upload your syllabus and instantly extract deadlines, grades, tasks, and exams.',
   },
@@ -48,7 +47,7 @@ const features = [
   },
   {
     icon: Headphones,
-    color: 'from-purple-400 to-violet-500',
+    color: 'from-purple-400 to-emerald-500',
     bg: 'bg-purple-50',
     title: 'Audio Study Mode',
     description: 'Turn your notes into podcast-style summaries you can listen to anywhere.',
@@ -56,9 +55,9 @@ const features = [
 ]
 
 const stats = [
-  { value: '10K+', label: 'Students', icon: Users },
-  { value: '50+', label: 'Universities', icon: GraduationCap },
-  { value: '98%', label: 'Satisfaction', icon: Star },
+  { value: '1', label: 'Unified Workspace', icon: Users },
+  { value: '8+', label: 'Academic Tools', icon: GraduationCap },
+  { value: '24/7', label: 'Study Access', icon: Star },
 ]
 
 const fadeUp = {
@@ -73,16 +72,15 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="fixed inset-x-0 top-0 z-50 flex h-16 items-center border-b border-white/10 bg-white/80 px-6 backdrop-blur-md lg:px-12">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-lg">
             <Zap className="h-4 w-4 text-white" />
           </div>
           <span className="text-lg font-bold text-slate-900">
-            Scholar<span className="text-violet-600">Flow</span>
+            Scholar<span className="text-emerald-600">Flow</span>
           </span>
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          <a href="#pricing" className="hidden text-sm font-medium text-slate-500 hover:text-slate-900 sm:block">Pricing</a>
           <Link href="/login">
             <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
               Sign In
@@ -100,8 +98,8 @@ export default function LandingPage() {
       <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 pt-16 text-center">
         {/* Background */}
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-b from-violet-50/80 via-white to-white" />
-          <div className="absolute left-1/2 top-0 h-[800px] w-[1200px] -translate-x-1/2 rounded-full bg-gradient-to-r from-violet-400/10 via-indigo-400/10 to-purple-400/10 blur-3xl" />
+          <div className="absolute inset-0 bg-gradient-to-b from-emerald-50/80 via-white to-white" />
+          <div className="absolute left-1/2 top-0 h-[800px] w-[1200px] -translate-x-1/2 rounded-full bg-gradient-to-r from-emerald-400/10 via-green-400/10 to-purple-400/10 blur-3xl" />
           {/* Grid pattern */}
           <div
             className="absolute inset-0 opacity-30"
@@ -190,7 +188,7 @@ export default function LandingPage() {
               {/* Mini sidebar */}
               <div className="bg-slate-950 p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2 mb-4">
-                  <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center">
+                  <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-emerald-500 to-green-500 flex items-center justify-center">
                     <Zap className="h-3 w-3 text-white" />
                   </div>
                   <span className="text-xs font-bold text-white">ScholarFlow</span>
@@ -218,7 +216,7 @@ export default function LandingPage() {
                 <p className="text-sm font-semibold text-slate-900 mb-4">Good morning, Alex 👋</p>
                 <div className="grid grid-cols-4 gap-3 mb-4">
                   {[
-                    { label: 'Courses', value: '4', color: 'bg-violet-100 text-violet-700' },
+                    { label: 'Courses', value: '4', color: 'bg-emerald-100 text-emerald-700' },
                     { label: 'Due Today', value: '2', color: 'bg-amber-100 text-amber-700' },
                     { label: 'GPA', value: '3.72', color: 'bg-emerald-100 text-emerald-700' },
                     { label: 'Study hrs', value: '22h', color: 'bg-sky-100 text-sky-700' },
@@ -234,7 +232,7 @@ export default function LandingPage() {
                     <p className="text-[10px] font-semibold text-slate-500 mb-2">UPCOMING</p>
                     {['COMP 2007 Lab Due', 'COMP 2003 Assign 3', 'ENGL Draft'].map((t) => (
                       <div key={t} className="flex items-center gap-1.5 py-1 border-b border-slate-50 last:border-0">
-                        <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                         <span className="text-[10px] text-slate-600">{t}</span>
                       </div>
                     ))}
@@ -257,7 +255,7 @@ export default function LandingPage() {
             </div>
           </div>
           {/* Glow */}
-          <div className="pointer-events-none absolute -bottom-8 left-1/2 h-24 w-3/4 -translate-x-1/2 rounded-full bg-violet-400/20 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-8 left-1/2 h-24 w-3/4 -translate-x-1/2 rounded-full bg-emerald-400/20 blur-3xl" />
         </motion.div>
       </section>
 
@@ -271,7 +269,7 @@ export default function LandingPage() {
             transition={{ duration: 0.5 }}
             className="mb-16 text-center"
           >
-            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-violet-600">Features</p>
+            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-emerald-600">Features</p>
             <h2 className="text-4xl font-extrabold text-slate-900">
               Everything you need to{' '}
               <span className="text-gradient">ace university</span>
@@ -302,110 +300,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section id="pricing" className="py-24 px-4 bg-slate-50">
-        <div className="mx-auto max-w-4xl">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="mb-14 text-center"
-          >
-            <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-violet-600">Pricing</p>
-            <h2 className="text-4xl font-extrabold text-slate-900">
-              Simple, transparent{' '}
-              <span className="text-gradient">pricing</span>
-            </h2>
-            <p className="mt-4 text-lg text-slate-500">Start free. Upgrade when you need the full power.</p>
-          </motion.div>
-
-          <div className="grid gap-6 sm:grid-cols-2">
-            {/* Free */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: 0.05 }}
-              className="flex flex-col rounded-3xl border-2 border-slate-200 bg-white p-8 shadow-sm"
-            >
-              <p className="text-sm font-semibold uppercase tracking-widest text-slate-400">Free</p>
-              <div className="mt-3 flex items-end gap-1">
-                <span className="text-5xl font-extrabold text-slate-900">$0</span>
-                <span className="mb-1.5 text-slate-400">/month</span>
-              </div>
-              <p className="mt-1 text-sm text-slate-500">Core tools every student needs</p>
-
-              <ul className="mt-8 flex-1 space-y-3">
-                {['Dashboard & overview', 'Course management', 'Task & deadline tracking', 'Calendar & grades', 'Notes & community'].map((f) => (
-                  <li key={f} className="flex items-center gap-2.5 text-sm text-slate-600">
-                    <Check className="h-4 w-4 shrink-0 text-slate-400" />
-                    {f}
-                  </li>
-                ))}
-                <li className="flex items-center gap-2.5 text-sm text-slate-400">
-                  <Lock className="h-4 w-4 shrink-0" />
-                  AI Assistant <span className="ml-1 text-xs">(Pro only)</span>
-                </li>
-                <li className="flex items-center gap-2.5 text-sm text-slate-400">
-                  <Lock className="h-4 w-4 shrink-0" />
-                  Audio Podcasts <span className="ml-1 text-xs">(Pro only)</span>
-                </li>
-              </ul>
-
-              <Link href="/onboarding" className="mt-8 block">
-                <Button variant="outline" className="w-full" size="lg">Get started free</Button>
-              </Link>
-            </motion.div>
-
-            {/* Pro */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="relative flex flex-col rounded-3xl bg-gradient-to-b from-violet-600 to-indigo-700 p-8 text-white shadow-xl"
-            >
-              <div className="pointer-events-none absolute inset-0 rounded-3xl bg-white/5" />
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                <span className="rounded-full bg-amber-400 px-4 py-1 text-xs font-bold text-amber-900 shadow">Most Popular</span>
-              </div>
-              <p className="relative text-sm font-semibold uppercase tracking-widest text-violet-200">Pro</p>
-              <div className="relative mt-3 flex items-end gap-1">
-                <span className="text-5xl font-extrabold">$9.99</span>
-                <span className="mb-1.5 text-violet-300">/month</span>
-              </div>
-              <p className="relative mt-1 text-sm text-violet-200">Full academic suite, no limits</p>
-
-              <ul className="relative mt-8 flex-1 space-y-3">
-                {[
-                  'Everything in Free',
-                  'Unlimited AI Assistant',
-                  'Audio Study Podcasts',
-                  'Academic Planner',
-                  'Syllabus AI parsing',
-                  'Priority support',
-                  'Early access to features',
-                ].map((f, i) => (
-                  <li key={f} className={`flex items-center gap-2.5 text-sm ${i === 0 ? 'font-semibold text-violet-100' : 'text-violet-100'}`}>
-                    <Check className="h-4 w-4 shrink-0 text-violet-300" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              <Link href="/onboarding" className="relative mt-8 block">
-                <Button className="w-full bg-white text-violet-700 font-bold hover:bg-violet-50 shadow-lg" size="lg">
-                  <Crown className="mr-2 h-4 w-4" />
-                  Get Pro — $9.99/mo
-                </Button>
-              </Link>
-              <p className="relative mt-3 text-center text-xs text-violet-300">Cancel anytime · No hidden fees</p>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
       {/* CTA */}
       <section className="py-24 px-4">
         <motion.div
@@ -413,7 +307,7 @@ export default function LandingPage() {
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.5 }}
-          className="mx-auto max-w-4xl overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-indigo-600 to-purple-700 p-12 text-center shadow-2xl shadow-violet-500/25"
+          className="mx-auto max-w-4xl overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-green-600 to-purple-700 p-12 text-center shadow-2xl shadow-emerald-500/25"
         >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.1),transparent_60%)]" />
           <div className="relative">
@@ -424,10 +318,10 @@ export default function LandingPage() {
               Ready to transform your academic life?
             </h2>
             <p className="mb-8 text-lg text-white/70">
-              Join thousands of students already using ScholarFlow to stay organized, study smarter, and reach their academic goals.
+              Bring your courses, deadlines, notes, grades, and study tools into one focused workspace.
             </p>
             <Link href="/onboarding">
-              <Button size="xl" className="bg-white text-violet-700 hover:bg-white/90 shadow-lg font-semibold">
+              <Button size="xl" className="bg-white text-emerald-700 hover:bg-white/90 shadow-lg font-semibold">
                 Get Started — It&apos;s Free
                 <ArrowRight className="h-4 w-4" />
               </Button>
@@ -440,18 +334,18 @@ export default function LandingPage() {
       <footer className="border-t border-slate-100 py-8 px-4">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-green-600">
               <Zap className="h-3.5 w-3.5 text-white" />
             </div>
             <span className="text-sm font-bold text-slate-900">
-              Scholar<span className="text-violet-600">Flow</span>
+              Scholar<span className="text-emerald-600">Flow</span>
             </span>
           </div>
           <p className="text-xs text-slate-400">© 2026 ScholarFlow. Built for students, by students.</p>
           <div className="flex gap-4 text-xs text-slate-400">
-            <a href="#" className="hover:text-slate-600">Privacy</a>
-            <a href="#" className="hover:text-slate-600">Terms</a>
-            <a href="#" className="hover:text-slate-600">Contact</a>
+            <Link href="/privacy" className="hover:text-slate-600">Privacy</Link>
+            <Link href="/terms" className="hover:text-slate-600">Terms</Link>
+            <a href="mailto:support@scholarflow.app" className="hover:text-slate-600">Contact</a>
           </div>
         </div>
       </footer>

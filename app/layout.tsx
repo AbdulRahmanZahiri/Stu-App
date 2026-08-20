@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import Script from 'next/script'
 import { AuthProvider } from '@/lib/auth-context'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const inter = Inter({
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#6366f1',
+  themeColor: '#059669',
   width: 'device-width',
   initialScale: 1,
 }
@@ -64,7 +65,10 @@ export default function RootLayout({
   });
 })();
 `}</Script>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <Toaster richColors position="top-right" />
+        </AuthProvider>
       </body>
     </html>
   )

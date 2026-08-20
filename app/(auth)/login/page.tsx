@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
   Eye, EyeOff, ArrowRight, AlertCircle, Sparkles,
@@ -13,20 +13,30 @@ import { Label } from '@/components/ui/label'
 import { supabase } from '@/lib/supabase'
 
 const features = [
-  { icon: BookOpen,   label: 'AI Syllabus Parser',       color: 'from-violet-400 to-purple-400' },
-  { icon: BarChart3,  label: 'Smart Grade Tracking',     color: 'from-indigo-400 to-blue-400'   },
+  { icon: BookOpen,   label: 'AI Syllabus Parser',       color: 'from-emerald-400 to-purple-400' },
+  { icon: BarChart3,  label: 'Smart Grade Tracking',     color: 'from-green-400 to-blue-400'   },
   { icon: Sparkles,   label: 'AI Study Assistant',       color: 'from-purple-400 to-pink-400'   },
   { icon: Users,      label: 'Student Community',        color: 'from-blue-400 to-cyan-400'     },
 ]
 
 const stats = [
-  { value: '10K+', label: 'Students' },
-  { value: '50+',  label: 'Universities' },
-  { value: '98%',  label: 'Satisfaction' },
+  { value: '1', label: 'Workspace' },
+  { value: '8+', label: 'Study Tools' },
+  { value: '24/7', label: 'Access' },
 ]
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
+      <LoginPageContent />
+    </Suspense>
+  )
+}
+
+function LoginPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const registered = searchParams.get('registered') === '1'
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +80,7 @@ export default function LoginPage() {
       {/* ── Left panel ─────────────────────────────────────────────── */}
       <div className="relative hidden w-[52%] overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12">
         {/* Layered gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-violet-950/80 to-indigo-950" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-emerald-950/80 to-green-950" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(139,92,246,0.25),transparent_60%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(99,102,241,0.2),transparent_60%)]" />
 
@@ -88,12 +98,12 @@ export default function LoginPage() {
         <motion.div
           animate={{ y: [0, -18, 0], opacity: [0.15, 0.25, 0.15] }}
           transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute left-[10%] top-[20%] h-64 w-64 rounded-full bg-violet-600/20 blur-3xl"
+          className="absolute left-[10%] top-[20%] h-64 w-64 rounded-full bg-emerald-600/20 blur-3xl"
         />
         <motion.div
           animate={{ y: [0, 20, 0], opacity: [0.1, 0.2, 0.1] }}
           transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          className="absolute bottom-[20%] right-[5%] h-80 w-80 rounded-full bg-indigo-600/20 blur-3xl"
+          className="absolute bottom-[20%] right-[5%] h-80 w-80 rounded-full bg-green-600/20 blur-3xl"
         />
         <motion.div
           animate={{ x: [0, 12, 0], opacity: [0.08, 0.15, 0.08] }}
@@ -103,11 +113,11 @@ export default function LoginPage() {
 
         {/* Content */}
         <div className="relative z-10 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 shadow-lg shadow-violet-500/30">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 shadow-lg shadow-emerald-500/30">
             <Zap className="h-5 w-5 text-white" />
           </div>
           <span className="text-xl font-bold tracking-tight text-white">
-            Scholar<span className="text-violet-400">Flow</span>
+            Scholar<span className="text-emerald-400">Flow</span>
           </span>
         </div>
 
@@ -119,12 +129,12 @@ export default function LoginPage() {
           >
             <h2 className="text-4xl font-extrabold leading-[1.1] tracking-tight text-white">
               Your academic life,{' '}
-              <span className="bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">
                 reimagined.
               </span>
             </h2>
             <p className="mt-4 max-w-sm text-base leading-relaxed text-white/50">
-              The all-in-one AI-powered student portal trusted by thousands of university students.
+              An all-in-one AI-powered portal designed for university students.
             </p>
           </motion.div>
 
@@ -175,14 +185,14 @@ export default function LoginPage() {
         {/* Mobile header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 lg:hidden">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-600">
               <Zap className="h-4 w-4 text-white" />
             </div>
             <span className="text-base font-bold text-slate-900">
-              Scholar<span className="text-violet-600">Flow</span>
+              Scholar<span className="text-emerald-600">Flow</span>
             </span>
           </div>
-          <Link href="/onboarding" className="text-xs font-semibold text-violet-600 hover:text-violet-700">
+          <Link href="/onboarding" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
             Create account →
           </Link>
         </div>
@@ -196,7 +206,7 @@ export default function LoginPage() {
           >
             {/* Heading */}
             <div className="mb-8">
-              <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-lg shadow-violet-500/25">
+              <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-lg shadow-emerald-500/25">
                 <GraduationCap className="h-6 w-6 text-white" />
               </div>
               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
@@ -208,6 +218,11 @@ export default function LoginPage() {
             </div>
 
             {/* Error */}
+            {registered && !error && (
+              <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                Account created. Check your email to confirm it, then sign in.
+              </div>
+            )}
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
@@ -225,7 +240,7 @@ export default function LoginPage() {
                 <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                   Email Address
                 </Label>
-                <div className={`relative transition-all duration-200 ${focused === 'email' ? 'ring-2 ring-violet-500/20 rounded-xl' : ''}`}>
+                <div className={`relative transition-all duration-200 ${focused === 'email' ? 'ring-2 ring-emerald-500/20 rounded-xl' : ''}`}>
                   <Input
                     id="email"
                     type="email"
@@ -234,7 +249,7 @@ export default function LoginPage() {
                     onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                     onFocus={() => setFocused('email')}
                     onBlur={() => setFocused(null)}
-                    className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:ring-0 focus-visible:border-violet-400"
+                    className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:ring-0 focus-visible:border-emerald-400"
                     required
                     autoComplete="email"
                   />
@@ -246,7 +261,7 @@ export default function LoginPage() {
                 <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                   Password
                 </Label>
-                <div className={`relative transition-all duration-200 ${focused === 'password' ? 'ring-2 ring-violet-500/20 rounded-xl' : ''}`}>
+                <div className={`relative transition-all duration-200 ${focused === 'password' ? 'ring-2 ring-emerald-500/20 rounded-xl' : ''}`}>
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
@@ -255,7 +270,7 @@ export default function LoginPage() {
                     onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                     onFocus={() => setFocused('password')}
                     onBlur={() => setFocused(null)}
-                    className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 pr-11 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:ring-0 focus-visible:border-violet-400"
+                    className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 pr-11 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:ring-0 focus-visible:border-emerald-400"
                     required
                     autoComplete="current-password"
                   />
@@ -274,7 +289,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading || !form.email || !form.password}
-                  className="relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-200 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition-all duration-200 hover:shadow-emerald-500/40 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -293,8 +308,21 @@ export default function LoginPage() {
               </div>
             </form>
 
+            {/* Try Demo */}
+            <div className="my-5 flex items-center gap-4">
+              <div className="h-px flex-1 bg-slate-100" />
+              <span className="text-xs text-slate-400">or</span>
+              <div className="h-px flex-1 bg-slate-100" />
+            </div>
+
+            <Link href="/dashboard">
+              <button className="w-full rounded-xl border-2 border-emerald-200 bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 transition-all duration-200 hover:border-emerald-400 hover:bg-emerald-100">
+                Try Demo — no account needed
+              </button>
+            </Link>
+
             {/* Divider */}
-            <div className="my-6 flex items-center gap-4">
+            <div className="my-5 flex items-center gap-4">
               <div className="h-px flex-1 bg-slate-100" />
               <span className="text-xs text-slate-400">New to ScholarFlow?</span>
               <div className="h-px flex-1 bg-slate-100" />
@@ -302,16 +330,16 @@ export default function LoginPage() {
 
             {/* Sign up link */}
             <Link href="/onboarding">
-              <button className="w-full rounded-xl border-2 border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition-all duration-200 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700">
+              <button className="w-full rounded-xl border-2 border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition-all duration-200 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700">
                 Create a free account
               </button>
             </Link>
 
             <p className="mt-6 text-center text-[11px] leading-relaxed text-slate-400">
               By signing in, you agree to ScholarFlow&apos;s{' '}
-              <a href="#" className="underline underline-offset-2 hover:text-violet-600">Terms</a>
+              <Link href="/terms" className="underline underline-offset-2 hover:text-emerald-600">Terms</Link>
               {' '}and{' '}
-              <a href="#" className="underline underline-offset-2 hover:text-violet-600">Privacy Policy</a>.
+              <Link href="/privacy" className="underline underline-offset-2 hover:text-emerald-600">Privacy Policy</Link>.
             </p>
           </motion.div>
         </div>

@@ -46,9 +46,9 @@ function maybePrune() {
 }
 
 // ---------------------------------------------------------------------------
-// Middleware
+// Proxy
 // ---------------------------------------------------------------------------
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   maybePrune()
@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  // Skip auth middleware if Supabase isn't configured (local dev without .env)
+  // Skip auth refresh if Supabase isn't configured (local dev without .env)
   if (supabaseUrl && supabaseKey) {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
@@ -101,58 +101,32 @@ export async function middleware(request: NextRequest) {
       },
     })
 
-    let user = null
-    try {
-      const { data } = await supabase.auth.getUser()
-      user = data.user
-    } catch {
-      // Supabase unreachable (project paused, offline, etc.) — treat as unauthenticated
-      // and let the request through so the UI can show a meaningful error instead of crashing.
-    }
+    // Race the session check against an 800 ms timeout.
+    // getSession() can make a network call to refresh expired tokens — if the
+    // Supabase project is paused (free-tier dormancy), that call hangs and
+    // can stall request handling. If we time out, we let the
+    // request through; the page-level components handle auth gracefully.
+    type RaceResult = { user: { email?: string } | null; confirmed: boolean }
+    const timeoutResult: RaceResult = { user: null, confirmed: false }
+
+    const { user, confirmed } = await Promise.race<RaceResult>([
+      supabase.auth.getSession()
+        .then(({ data }) => ({ user: data.session?.user ?? null, confirmed: true }))
+        .catch(() => ({ user: null, confirmed: true })),
+      new Promise<RaceResult>(resolve =>
+        setTimeout(() => resolve(timeoutResult), 800)
+      ),
+    ])
 
     const isRealUser = !!user?.email
 
-    const isPublicPath =
-      pathname === '/' ||
-      pathname === '/login' ||
-      pathname === '/onboarding' ||
-      pathname.startsWith('/api/') ||
-      pathname.startsWith('/_next/') ||
-      pathname.startsWith('/favicon')
-
-    if (!isRealUser && !isPublicPath) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
-    }
-
-    if (isRealUser && (pathname === '/login' || pathname === '/onboarding')) {
+    // If confirmed and logged in, send away from auth pages to dashboard.
+    // We intentionally do NOT redirect unauthenticated users to /login —
+    // the app runs on mock data and should be accessible without an account.
+    if (confirmed && isRealUser && (pathname === '/login' || pathname === '/onboarding')) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
-    }
-
-    // ── Layer 1: Admin route guard ────────────────────────────────────────────
-    // Block /admin for anyone who isn't an admin before the page even loads.
-    if (pathname.startsWith('/admin') && isRealUser && user) {
-      try {
-        const { data: profile } = await supabase
-          .from('student_profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single()
-
-        if (!profile?.is_admin) {
-          const url = request.nextUrl.clone()
-          url.pathname = '/dashboard'
-          return NextResponse.redirect(url)
-        }
-      } catch {
-        // DB unreachable — deny access to be safe
-        const url = request.nextUrl.clone()
-        url.pathname = '/dashboard'
-        return NextResponse.redirect(url)
-      }
     }
   }
 

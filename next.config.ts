@@ -35,6 +35,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: projectRoot,
+  serverExternalPackages: ['pdf-parse', '@napi-rs/canvas'],
   turbopack: {
     root: projectRoot,
   },

@@ -3,9 +3,8 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 // ─── Layer 2: Server-side admin guard ─────────────────────────────────────────
-// Middleware (Layer 1) blocks the /admin page.
-// This API route adds a second independent check so even a direct API call
-// from a non-admin is rejected before any data is returned.
+// The page has a client-side guard; this independent server check ensures a
+// direct API call from a non-admin is rejected before data is returned.
 
 export async function GET() {
   const cookieStore = await cookies()
