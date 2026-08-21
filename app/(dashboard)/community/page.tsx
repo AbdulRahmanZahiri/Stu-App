@@ -440,16 +440,11 @@ export default function CommunityPage() {
               <Input placeholder="Search rooms..." value={search} onChange={(e) => setSearch(e.target.value)}
                 className="h-8 rounded-lg border-slate-100 bg-slate-50 pl-8 text-xs" />
             </div>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <Badge variant={chatMode === 'realtime' ? 'success' : 'secondary'} className="text-[10px]">
-                {chatMode === 'realtime' ? '🟢 Live' : '⚠️ Demo'}
-              </Badge>
-              {loadingRooms && <span className="text-[10px] text-slate-400">Connecting...</span>}
-            </div>
-            {chatMode === 'demo' && !authUserId && (
-              <p className="mt-2 text-[11px] text-amber-600">
-                Sign in to chat with real ScholarFlow students.
-              </p>
+            {loadingRooms && (
+              <div className="mt-2 flex items-center gap-1.5">
+                <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                <span className="text-[10px] text-slate-400">Connecting...</span>
+              </div>
             )}
             {chatError && <p className="mt-2 text-[11px] text-rose-500 leading-tight">{chatError}</p>}
           </div>
@@ -513,8 +508,8 @@ export default function CommunityPage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-semibold text-slate-700">{currentUser.name}</p>
                 <div className="flex items-center gap-1">
-                  <div className={cn('h-1.5 w-1.5 rounded-full', chatMode === 'realtime' ? 'bg-emerald-400' : 'bg-amber-400')} />
-                  <span className="text-[10px] text-slate-400">{chatMode === 'realtime' ? 'Online' : 'Demo mode'}</span>
+                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-[10px] text-slate-400">Online</span>
                 </div>
               </div>
             </div>
