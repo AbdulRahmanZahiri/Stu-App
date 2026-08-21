@@ -219,6 +219,10 @@ export interface ChatMessage {
   senderAvatar?: string
   content: string
   type: 'text' | 'file' | 'image' | 'system'
+  fileUrl?: string
+  fileName?: string
+  fileSize?: number
+  fileMime?: string
   createdAt: Date
   reactions?: MessageReaction[]
 }

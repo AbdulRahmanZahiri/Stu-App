@@ -13,7 +13,10 @@ live chat or a lock service.
 
 ## Active Work
 
-- None.
+- 2026-08-21 — Codex is rebuilding the Academic Planner with source-backed
+  Memorial program data and constraint-based scheduling. Owned files:
+  `lib/planner-types.ts`, `lib/planner-data.ts`, `lib/planner-engine.ts`,
+  `lib/planner-store.tsx`, and `app/(dashboard)/planner/page.tsx`.
 
 ## Completed Work
 
