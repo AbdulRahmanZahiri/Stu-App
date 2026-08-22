@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'groq/compound',
       temperature: 0,
       max_tokens: 4096,
       response_format: { type: 'json_object' },

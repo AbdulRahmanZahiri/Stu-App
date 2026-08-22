@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const completion = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'groq/compound',
       max_tokens: 3000,
       temperature: 0.75,
       messages: [
@@ -89,6 +89,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ dialogue, script, duration: estimatedDuration })
   } catch (error) {
     console.error('Podcast generation error:', error)
-    return NextResponse.json({ error: 'Failed to generate podcast script' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('401') || msg.includes('invalid_api_key') || msg.includes('Authentication')) {
+      return NextResponse.json({ error: 'Groq API key is invalid or not configured in Vercel.' }, { status: 500 })
+    }
+    if (msg.includes('429') || msg.includes('rate_limit')) {
+      return NextResponse.json({ error: 'Groq rate limit hit. Wait 30 seconds and try again.' }, { status: 500 })
+    }
+    if (msg.includes('model') || msg.includes('404')) {
+      return NextResponse.json({ error: 'AI model unavailable. Try again in a moment.' }, { status: 500 })
+    }
+    return NextResponse.json({ error: `Generation failed: ${msg}` }, { status: 500 })
   }
 }

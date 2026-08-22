@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'groq/compound',
       max_tokens: 1024,
       messages: [{ role: 'system', content: `${SYSTEM_PROMPT}${courseContext}` }, ...messages],
     })

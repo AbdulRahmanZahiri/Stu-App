@@ -56,7 +56,7 @@ Keep it realistic — max 4 study hours per day, avoid evenings after 9 PM, leav
 
   try {
     const res = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'groq/compound',
       max_tokens: 2000,
       temperature: 0.3,
       response_format: { type: 'json_object' },
