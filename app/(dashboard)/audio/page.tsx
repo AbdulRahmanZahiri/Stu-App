@@ -140,53 +140,55 @@ export default function AudioStudyPage() {
     setPlaying(false)
   }, [])
 
-  // Pre-queue ALL utterances at once — eliminates gaps between speakers
+  // Sequential speak — each line triggers the next on `onend` (most reliable cross-browser)
   const speakFrom = useCallback((startIdx: number, dialogue: PodcastLine[]) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
     window.speechSynthesis.cancel()
+    if (!dialogue.length || startIdx >= dialogue.length) return
 
-    const segs = dialogue.slice(startIdx)
-    if (!segs.length) return
+    const [v1, v2] = voicesRef.current
 
-    segs.forEach((line, localIdx) => {
-      const globalIdx = startIdx + localIdx
-      const utt = new SpeechSynthesisUtterance(line.text)
-      const [v1, v2] = voicesRef.current
-
-      if (line.speaker === 'HOST_1') {
-        if (v1) utt.voice = v1
-        utt.rate = 1.08
-        utt.pitch = 1.15  // Alex: brighter, slightly higher
-      } else {
-        if (v2) utt.voice = v2
-        utt.rate = 1.12
-        utt.pitch = 0.92  // Jordan: confident, a touch deeper, faster
-      }
-      utt.volume = volumeRef.current
-
-      utt.onstart = () => {
-        segRef.current = globalIdx
-        setSegIndex(globalIdx)
-      }
-
-      utt.onerror = (e) => {
-        if (e.error === 'interrupted' || e.error === 'canceled') return
-        playingRef.current = false
-        setPlaying(false)
-      }
-
-      // Only the last utterance marks completion
-      if (localIdx === segs.length - 1) {
-        utt.onend = () => {
+    function speakLine(idx: number) {
+      if (!playingRef.current || idx >= dialogue.length) {
+        if (idx >= dialogue.length) {
           playingRef.current = false
           setPlaying(false)
           segRef.current = 0
           setSegIndex(0)
         }
+        return
+      }
+
+      const line = dialogue[idx]
+      const utt = new SpeechSynthesisUtterance(line.text)
+
+      if (line.speaker === 'HOST_1') {
+        if (v1) utt.voice = v1
+        utt.rate = 1.05
+        utt.pitch = 1.1
+      } else {
+        if (v2) utt.voice = v2
+        utt.rate = 1.1
+        utt.pitch = 0.92
+      }
+      utt.volume = volumeRef.current
+
+      utt.onstart = () => {
+        segRef.current = idx
+        setSegIndex(idx)
+      }
+
+      utt.onend = () => speakLine(idx + 1)
+
+      utt.onerror = (e) => {
+        if (e.error === 'interrupted' || e.error === 'canceled') return
+        speakLine(idx + 1) // skip broken line, continue
       }
 
       window.speechSynthesis.speak(utt)
-    })
+    }
+
+    speakLine(startIdx)
   }, [])
 
   function togglePlay() {
