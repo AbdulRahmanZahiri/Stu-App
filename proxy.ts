@@ -120,13 +120,26 @@ export async function proxy(request: NextRequest) {
 
     const isRealUser = !!user?.email
 
-    // If confirmed and logged in, send away from auth pages to dashboard.
-    // We intentionally do NOT redirect unauthenticated users to /login —
-    // the app runs on mock data and should be accessible without an account.
-    if (confirmed && isRealUser && (pathname === '/login' || pathname === '/onboarding')) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
+    const dashboardRoutes = [
+      '/dashboard', '/courses', '/tasks', '/calendar', '/grades',
+      '/notes', '/ai-assistant', '/study-planner', '/community',
+      '/planner', '/audio', '/settings', '/admin',
+    ]
+    const isDashboardRoute = dashboardRoutes.some(r => pathname === r || pathname.startsWith(r + '/'))
+
+    if (confirmed) {
+      // Logged-in: send away from auth pages
+      if (isRealUser && (pathname === '/login' || pathname === '/onboarding')) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        return NextResponse.redirect(url)
+      }
+      // Not logged in: redirect dashboard routes to login
+      if (!isRealUser && isDashboardRoute) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        return NextResponse.redirect(url)
+      }
     }
   }
 

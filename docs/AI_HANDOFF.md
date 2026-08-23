@@ -13,13 +13,18 @@ live chat or a lock service.
 
 ## Active Work
 
-- 2026-08-21 — Codex is rebuilding the Academic Planner with source-backed
-  Memorial program data and constraint-based scheduling. Owned files:
-  `lib/planner-types.ts`, `lib/planner-data.ts`, `lib/planner-engine.ts`,
-  `lib/planner-store.tsx`, and `app/(dashboard)/planner/page.tsx`.
+- None.
 
 ## Completed Work
 
+- 2026-08-21 — Codex replaced the Academic Planner's dummy universities,
+  majors, courses, instructors, grades, and schedules with a source-backed
+  Memorial program directory, a verified 2025–2026 Computer Science B.Sc.
+  map, honest manual mode for unmapped programs, and an original
+  prerequisite/corequisite/credit-load constraint engine. Planner ESLint,
+  TypeScript, engine smoke tests, production build, and dependency audit pass;
+  repository-wide lint remains blocked by unrelated `community` and
+  `study-planner` errors.
 - 2026-08-12 — Codex repaired Supabase persistence, syllabus import, auth/profile
   settings, calendar, grades, planner, notifications, realtime chat, Stripe
   subscriptions, API authorization, Next.js 16 migration, and project validation.

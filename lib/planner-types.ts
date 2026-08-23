@@ -1,6 +1,29 @@
 export type Term = 'Fall' | 'Winter' | 'Spring'
-export type ReqCategory = 'core' | 'elective_upper' | 'elective_senior' | 'math' | 'stat' | 'science' | 'breadth_writing' | 'breadth_humanities' | 'breadth_social' | 'breadth_science' | 'lab' | 'free' | 'professional' | 'capstone'
-export type RuleType = 'SPECIFIC_COURSES' | 'CREDIT_HOURS_FROM_SET' | 'CREDIT_HOURS_AT_LEVEL' | 'CHOICE'
+
+export type ReqCategory =
+  | 'core'
+  | 'elective_upper'
+  | 'elective_senior'
+  | 'math'
+  | 'stat'
+  | 'science'
+  | 'breadth_writing'
+  | 'breadth_humanities'
+  | 'breadth_social'
+  | 'breadth_science'
+  | 'lab'
+  | 'free'
+  | 'professional'
+  | 'capstone'
+  | 'degree_total'
+
+export type RuleType =
+  | 'SPECIFIC_COURSES'
+  | 'CREDIT_HOURS_FROM_SET'
+  | 'CREDIT_HOURS_AT_LEVEL'
+  | 'CHOICE'
+  | 'TOTAL_CREDITS'
+  | 'MANUAL'
 
 export interface PrereqNode {
   type: 'AND' | 'OR' | 'COURSE' | 'MIN_GRADE' | 'PROGRAM_ADMISSION'
@@ -19,10 +42,14 @@ export interface MUNCourse {
   description: string
   prerequisites?: PrereqNode
   corequisites?: string[]
-  typicalAvailability: Term[]
+  corequisiteChoices?: string[][]
+  prerequisiteNote?: string
+  typicalAvailability?: Term[]
   mutuallyExclusiveWith?: string[]
-  professors?: string[]
-  hasLab?: boolean
+  recommendedYear?: number
+  attributes?: string[]
+  catalogYear: string
+  officialUrl: string
 }
 
 export interface PlannerRequirement {
@@ -39,38 +66,50 @@ export interface PlannerRequirement {
   choices?: string[][]
   allowsDoubleCounting: boolean
   doubleCountCap?: number
+  autoPlan?: boolean
   note?: string
 }
 
 export interface PlannerProgram {
   id: string
+  universityId: string
   facultyId: string
   name: string
-  degreeType: 'BSc' | 'BA' | 'BEng' | 'BBA' | 'BNurs' | 'BSW' | 'Minor' | 'Certificate'
-  totalCreditHoursRequired: number
-  typicalYears: number
+  degreeType: string
+  totalCreditHoursRequired: number | null
+  typicalYears: number | null
   description: string
   highlights: string[]
   requirements: PlannerRequirement[]
+  catalogYear: string
+  officialUrl: string
+  planningMode: 'verified' | 'manual'
+  statusNote?: string
+  acceptingNewStudents?: boolean
+  isExploratory?: boolean
+  maxCreditsPerTerm?: number
+  autoPlanTerms?: Term[]
 }
 
 export interface Faculty {
   id: string
+  universityId: string
   name: string
   shortName: string
   emoji: string
-  color: string          // tailwind bg class
-  textColor: string      // tailwind text class
+  color: string
+  textColor: string
   borderColor: string
   description: string
-  programs: string[]     // program ids
+  programs: string[]
 }
 
 export interface CompletedEntry {
   courseCode: string
-  grade: number
-  letterGrade: string
+  grade?: number
+  letterGrade?: string
   term: string
+  creditHours?: number
   isTransfer?: boolean
 }
 
@@ -79,6 +118,7 @@ export interface TermSlot {
   term: Term
   year: number
   courses: string[]
+  relativeYear?: number
 }
 
 export interface PlannerScenario {
@@ -88,6 +128,9 @@ export interface PlannerScenario {
   completed: CompletedEntry[]
   declaredPrograms: string[]
   createdAt: string
+  universityId?: string
+  catalogYear?: string
+  startTerm?: Term
 }
 
 export interface PlannerState {
@@ -99,9 +142,14 @@ export interface PlannerState {
 export interface RequirementSatisfaction {
   req: PlannerRequirement
   satisfiedBy: string[]
+  completedBy: string[]
+  plannedBy: string[]
+  creditsCompleted: number
+  creditsPlanned: number
   creditsSatisfied: number
   creditsRequired: number
   isComplete: boolean
+  isPlanned: boolean
 }
 
 export interface University {
@@ -115,10 +163,13 @@ export interface University {
   available: boolean
   tagline?: string
   studentCount?: string
+  catalogYear: string
+  officialCatalogUrl: string
+  lastVerified: string
 }
 
 export interface SuggestedCourse {
   courseCode: string
   term: Term
-  relativeYear: number   // 1, 2, 3, 4
+  relativeYear: number
 }

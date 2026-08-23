@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   GraduationCap, Info, Search, ChevronRight, Plus, Trash2,
   CheckCircle2, AlertTriangle, Circle, Clock, BookOpen, X,
-  Users, CalendarDays, BarChart3, ArrowLeft, Sparkles, Check,
-  AlertCircle, Copy, RotateCcw,
+  CalendarDays, BarChart3, ArrowLeft, Sparkles, Check,
+  AlertCircle, Copy, RotateCcw, ExternalLink, ShieldCheck,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,8 +16,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { usePlanner } from '@/lib/planner-store'
-import { MUN_COURSES, MUN_PROGRAMS, FACULTIES, UNIVERSITIES, SUGGESTED_PLANS, describePrereqs, getCourse, getProgram, getFaculty } from '@/lib/planner-data'
-import type { MUNCourse, Term, CompletedEntry } from '@/lib/planner-types'
+import { MUN_COURSES, MUN_PROGRAMS, FACULTIES, UNIVERSITIES, PLANNER_SOURCE_LINKS, describePrereqs, getCourse, getProgram, getFaculty, getUniversity } from '@/lib/planner-data'
+import { creditsFor, generateDegreePlan } from '@/lib/planner-engine'
+import type { MUNCourse, Term, TermSlot, CompletedEntry } from '@/lib/planner-types'
 import { toast } from 'sonner'
 
 // ── Colour palettes ───────────────────────────────────────────────────────────
@@ -72,8 +73,8 @@ function dd(dept: string) { return DEPT_DOT[dept] ?? 'bg-slate-400' }
 // ══ WIZARD ════════════════════════════════════════════════════════════════════
 
 const YEAR_OPTIONS = [
-  { value: 1, label: 'First Year', subtitle: 'Also called "General" or Foundation Year', description: 'You haven\'t picked a major yet — that\'s totally normal. First-year courses let you explore different subjects before declaring.' },
-  { value: 2, label: 'Second Year', subtitle: 'Entering your declared major', description: 'You\'re starting or continuing a specific program. Your plan will include major-specific courses.' },
+  { value: 1, label: 'First Year', subtitle: 'Starting university', description: 'Choose an intended major or an official undeclared/exploratory pathway where one is available.' },
+  { value: 2, label: 'Second Year', subtitle: 'Program study', description: 'Record completed first-year courses so the planner can place later requirements correctly.' },
   { value: 3, label: 'Third Year', subtitle: 'Upper-year studies', description: 'Junior-level courses and electives tailored to your program.' },
   { value: 4, label: 'Fourth Year', subtitle: 'Final year', description: 'Senior courses, capstone projects, and graduation requirements.' },
 ]
@@ -96,35 +97,28 @@ function PlannerWizard() {
   // per-term typing input state
   const [termInputs, setTermInputs] = useState<Map<string, string>>(new Map())
 
+  const university = selectedUniversity ? getUniversity(selectedUniversity) : null
   const faculty = selectedFaculty ? getFaculty(selectedFaculty) : null
   const program = selectedProgram ? getProgram(selectedProgram) : null
 
   const programsForStep = selectedFaculty
-    ? MUN_PROGRAMS.filter((p) => {
-        if (p.facultyId !== selectedFaculty) return false
-        const isGeneral = p.id.endsWith('-general')
-        if (yearOfStudy === 1) return isGeneral
-        return !isGeneral
-      })
+    ? MUN_PROGRAMS
+        .filter((candidate) => candidate.facultyId === selectedFaculty && candidate.universityId === selectedUniversity)
+        .sort((left, right) => Number(Boolean(right.isExploratory)) - Number(Boolean(left.isExploratory)) || left.name.localeCompare(right.name))
     : []
 
-  // Organize suggested plan by relativeYear → term → codes (for Step 6)
-  const planByYearTerm = (() => {
-    const plan = SUGGESTED_PLANS[selectedProgram ?? ''] ?? []
-    const acc: Record<number, Partial<Record<Term, string[]>>> = {}
-    for (const entry of plan) {
-      if (!acc[entry.relativeYear]) acc[entry.relativeYear] = {}
-      if (!acc[entry.relativeYear][entry.term]) acc[entry.relativeYear][entry.term] = []
-      acc[entry.relativeYear][entry.term]!.push(entry.courseCode)
-    }
-    return acc
-  })()
+  const previewPlan = selectedProgram
+    ? generateDegreePlan(selectedProgram, startYear, startTerm)
+    : null
 
-  // Only show years already completed (relativeYear < yearOfStudy)
-  const priorPlanYears = Object.entries(planByYearTerm)
-    .map(([ry, terms]) => ({ ry: parseInt(ry), terms }))
+  const priorPlanYears = Object.values((previewPlan?.termSlots ?? []).reduce<Record<number, { ry: number; slots: TermSlot[] }>>((groups, slot, index) => {
+    const relativeYear = slot.relativeYear ?? Math.floor(index / 3) + 1
+    groups[relativeYear] = groups[relativeYear] ?? { ry: relativeYear, slots: [] }
+    groups[relativeYear].slots.push(slot)
+    return groups
+  }, {}))
     .filter(({ ry }) => ry < (yearOfStudy ?? 1))
-    .sort((a, b) => a.ry - b.ry)
+    .sort((left, right) => left.ry - right.ry)
 
   const toggleChecked = (code: string, termId: string) => {
     setCheckedCourses((prev) => {
@@ -160,23 +154,21 @@ function PlannerWizard() {
     const priorEntries: CompletedEntry[] = [
       ...[...checkedCourses.entries()].map(([code, termId]) => ({
         courseCode: code,
-        grade: 80,
-        letterGrade: 'A-',
         term: termId.replace('-', ' '),
         isTransfer: false,
       })),
       ...[...extraPerTerm.entries()].flatMap(([termId, codes]) =>
         codes.map((code) => ({
           courseCode: code,
-          grade: 80,
-          letterGrade: 'A-',
           term: termId.replace('-', ' '),
           isTransfer: true,
         }))
       ),
     ]
-    completeWizard(selectedProgram, startYear, priorEntries)
-    toast.success('Your plan has been generated! Customize it from the Semester Board.')
+    completeWizard(selectedProgram, startYear, startTerm, priorEntries)
+    toast.success(program?.planningMode === 'verified'
+      ? 'Catalog-backed plan generated. Review elective choices and current offerings.'
+      : 'Manual degree workspace created from the official program listing.')
   }
 
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 2 + i)
@@ -218,9 +210,9 @@ function PlannerWizard() {
                 <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-500 shadow-lg">
                   <GraduationCap className="h-7 w-7 text-white" />
                 </div>
-                <h1 className="text-2xl font-bold text-slate-900 mb-2">Welcome to the Degree Planner</h1>
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">Build a Catalog-Backed Degree Plan</h1>
                 <p className="text-sm text-slate-500 max-w-lg mx-auto">
-                  Map out your entire degree — from day one to graduation. First, select your <strong>university</strong>.
+                  Start with a university catalog ScholarFlow has actually verified. Unsupported institutions are not shown as fake choices.
                 </p>
               </div>
 
@@ -245,11 +237,12 @@ function PlannerWizard() {
                             <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 font-medium">Coming soon</span>
                           )}
                           {u.available && (
-                            <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] text-emerald-700 font-medium">Available now</span>
+                            <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] text-emerald-700 font-medium">Catalog connected</span>
                           )}
                         </div>
                         <p className="text-[11px] text-slate-500">{u.city} · {u.studentCount}</p>
                         {u.tagline && <p className="mt-1 text-xs text-slate-400 leading-relaxed">{u.tagline}</p>}
+                        <p className="mt-1 text-[10px] font-medium text-emerald-700">Catalog {u.catalogYear} · verified {u.lastVerified}</p>
                       </div>
                       {selectedUniversity === u.id && <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />}
                     </div>
@@ -272,12 +265,12 @@ function PlannerWizard() {
                 <button onClick={() => setStep(1)} className="mb-4 flex items-center gap-1.5 text-sm text-slate-500 hover:text-emerald-600">
                   <ArrowLeft className="h-3.5 w-3.5" /> Back to University
                 </button>
-                <h2 className="text-xl font-bold text-slate-900">Which faculty are you in?</h2>
-                <p className="mt-1 text-sm text-slate-500">At MUN, your faculty determines your overall degree requirements. You can switch programs within the same faculty without extra requirements.</p>
+                <h2 className="text-xl font-bold text-slate-900">Which academic area are you planning?</h2>
+                <p className="mt-1 text-sm text-slate-500">These areas and program names come from {university?.name}&apos;s official directory. Detailed audits are enabled only where requirements are mapped.</p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {FACULTIES.map((f) => (
+                {FACULTIES.filter((candidate) => candidate.universityId === selectedUniversity).map((f) => (
                   <button
                     key={f.id}
                     onClick={() => { setSelectedFaculty(f.id); setSelectedProgram(null) }}
@@ -318,7 +311,7 @@ function PlannerWizard() {
                   <ArrowLeft className="h-3.5 w-3.5" /> Back
                 </button>
                 <h2 className="text-xl font-bold text-slate-900">What year of university are you in?</h2>
-                <p className="mt-1 text-sm text-slate-500">This helps us show the right courses. First year is often called <strong>&quot;General&quot;</strong> because most students haven&apos;t declared a specific major yet.</p>
+                <p className="mt-1 text-sm text-slate-500">This controls which earlier terms are offered when you record completed courses. It does not assume every faculty declares majors on the same timeline.</p>
               </div>
 
               <div className="space-y-3">
@@ -357,7 +350,7 @@ function PlannerWizard() {
                 <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
                   <Info className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800 leading-relaxed">
-                    <strong>First year tip:</strong> At MUN, most students in Science, Engineering, Arts, and Business share common first-year courses. You declare your specific major in second year — so relax and explore!
+                    <strong>First-year tip:</strong> Choose your intended program if you know it, or select an official undeclared, Business One, or Engineering One pathway when it applies.
                   </p>
                 </div>
               )}
@@ -382,9 +375,7 @@ function PlannerWizard() {
                 </button>
                 <h2 className="text-xl font-bold text-slate-900">{faculty?.emoji} {faculty?.name}</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  {yearOfStudy === 1
-                    ? 'Since you\'re in first year, we\'ve pre-selected the General foundation program for your faculty. You can switch to a specific major any time in second year.'
-                    : 'Choose your declared program or major below.'}
+                  Choose the official program you are in or intend to enter. A mapped degree plan and a manual catalog workspace are clearly distinguished.
                 </p>
               </div>
 
@@ -392,9 +383,11 @@ function PlannerWizard() {
                 {programsForStep.map((prog) => (
                   <button
                     key={prog.id}
-                    onClick={() => setSelectedProgram(prog.id)}
+                    onClick={() => { if (prog.acceptingNewStudents !== false) setSelectedProgram(prog.id) }}
+                    disabled={prog.acceptingNewStudents === false}
                     className={cn(
                       'w-full rounded-2xl border-2 p-4 text-left transition-all hover:shadow-md',
+                      prog.acceptingNewStudents === false && 'cursor-not-allowed opacity-55 hover:shadow-none',
                       selectedProgram === prog.id ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200',
                     )}
                   >
@@ -403,7 +396,17 @@ function PlannerWizard() {
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className={cn('text-sm font-bold', selectedProgram === prog.id ? 'text-emerald-800' : 'text-slate-800')}>{prog.name}</span>
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{prog.degreeType}</span>
-                          <span className="text-[10px] text-slate-400">{prog.totalCreditHoursRequired} cr · {prog.typicalYears} yrs</span>
+                          {prog.totalCreditHoursRequired !== null && <span className="text-[10px] text-slate-400">{prog.totalCreditHoursRequired} cr</span>}
+                          {prog.typicalYears !== null && <span className="text-[10px] text-slate-400">· {prog.typicalYears} yrs</span>}
+                          <span className={cn(
+                            'rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                            prog.planningMode === 'verified'
+                              ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
+                              : 'border-slate-200 bg-slate-100 text-slate-600',
+                          )}>
+                            {prog.planningMode === 'verified' ? 'Degree map available' : 'Manual plan'}
+                          </span>
+                          {prog.acceptingNewStudents === false && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">Not accepting new students</span>}
                         </div>
                         <p className="text-xs text-slate-500 leading-relaxed mb-2">{prog.description}</p>
                         <div className="flex flex-wrap gap-1">
@@ -417,6 +420,19 @@ function PlannerWizard() {
                   </button>
                 ))}
               </div>
+
+              {program && (
+                <div className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-emerald-900">{program.catalogYear}</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-800">{program.statusNote}</p>
+                    <a href={program.officialUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline">
+                      Open official source <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-6 flex justify-between">
                 <Button onClick={() => setStep(3)} variant="outline" size="sm" className="gap-1.5">
@@ -445,7 +461,7 @@ function PlannerWizard() {
                   <div>
                     <label className="text-sm font-semibold text-slate-700 block mb-2">Starting Term</label>
                     <div className="flex gap-2">
-                      {(['Fall', 'Winter'] as Term[]).map((t) => (
+                      {(['Fall', 'Winter', 'Spring'] as Term[]).map((t) => (
                         <button key={t}
                           onClick={() => setStartTerm(t)}
                           className={cn('flex-1 rounded-xl border-2 py-3 text-sm font-medium transition-all',
@@ -468,7 +484,8 @@ function PlannerWizard() {
                   </div>
                   <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
                     <p className="text-xs text-emerald-700">
-                      <strong>Your plan:</strong> {program?.name} · Starting {startTerm} {startYear} · Graduating ~{startTerm} {startYear + (program?.typicalYears ?? 4)}
+                      <strong>Your plan:</strong> {program?.name} · Starting {startTerm} {startYear}
+                      {program?.typicalYears !== null && program?.typicalYears !== undefined ? ` · published length ${program.typicalYears} years` : ' · confirm program length in the official source'}
                     </p>
                   </div>
                 </CardContent>
@@ -496,7 +513,9 @@ function PlannerWizard() {
                 <p className="mt-1 text-sm text-slate-500">
                   {yearOfStudy === 1
                     ? 'You\'re just starting — no courses to mark yet. You can still add transfer credits below if applicable.'
-                    : `Check off everything you've finished before ${startTerm} ${startYear + (yearOfStudy ?? 1) - 1}. We've pre-organized your expected courses by semester.`}
+                    : program?.planningMode === 'verified'
+                      ? 'Check the mapped courses you actually completed, then add any other transcript courses by their exact code.'
+                      : 'This program is in manual mode. Add completed courses from your transcript; ScholarFlow will not invent a sequence.'}
                 </p>
               </div>
 
@@ -504,27 +523,25 @@ function PlannerWizard() {
                 <div className="rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50 p-6 text-center mb-4">
                   <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto mb-2" />
                   <p className="text-sm font-bold text-emerald-800 mb-1">Fresh start!</p>
-                  <p className="text-xs text-emerald-600">As a first-year student you haven&apos;t completed any university courses yet. Your semester plan will start clean.</p>
+                  <p className="text-xs text-emerald-600">No prior university terms are expected. You can still enter transfer credit below.</p>
                 </div>
               ) : (
                 <div className="space-y-5 mb-4 max-h-[50vh] overflow-y-auto pr-1">
-                  {priorPlanYears.map(({ ry, terms }) => {
-                    const actualYear = startYear + (ry - 1)
-                    return (
+                  {priorPlanYears.map(({ ry, slots }) => (
                       <div key={ry}>
                         <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                          Year {ry} — {actualYear}/{actualYear + 1}
+                          Year {ry}
                         </p>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {(['Fall', 'Winter'] as Term[]).map((term) => {
-                            const termId = `${term}-${actualYear}`
-                            const planCodes = terms[term] ?? []
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {slots.map((slot) => {
+                            const termId = slot.id
+                            const planCodes = slot.courses
                             const extras = extraPerTerm.get(termId) ?? []
                             if (planCodes.length === 0 && extras.length === 0 && !termInputs.get(termId)) {
                               return (
                                 <div key={termId} className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3">
-                                  <p className="text-[11px] font-semibold text-slate-400 mb-2">{term} {actualYear}</p>
-                                  <p className="text-[10px] text-slate-300 italic mb-2">No courses suggested for this term</p>
+                                  <p className="text-[11px] font-semibold text-slate-400 mb-2">{slot.term} {slot.year}</p>
+                                  <p className="text-[10px] text-slate-300 italic mb-2">No catalog requirement auto-placed</p>
                                   <div className="flex gap-1.5">
                                     <Input value={termInputs.get(termId) ?? ''}
                                       onChange={(e) => setTermInputs((p) => new Map(p).set(termId, e.target.value))}
@@ -537,7 +554,7 @@ function PlannerWizard() {
                             }
                             return (
                               <div key={termId} className="rounded-xl border border-slate-200 bg-white p-3">
-                                <p className="text-[11px] font-semibold text-slate-600 mb-2">{term} {actualYear}</p>
+                                <p className="text-[11px] font-semibold text-slate-600 mb-2">{slot.term} {slot.year}</p>
                                 <div className="space-y-1 mb-2">
                                   {planCodes.map((code) => {
                                     const course = getCourse(code)
@@ -554,7 +571,7 @@ function PlannerWizard() {
                                         </div>
                                         <span className={cn('rounded border px-1.5 py-0.5 text-[10px] font-bold flex-shrink-0', dc(course?.department ?? code.split(' ')[0]))}>{code}</span>
                                         <span className="text-[11px] text-slate-600 flex-1 truncate">{course?.title ?? code}</span>
-                                        <span className="text-[10px] text-slate-400 flex-shrink-0">{course?.creditHours ?? 3}cr</span>
+                                        <span className="text-[10px] text-slate-400 flex-shrink-0">{course ? `${course.creditHours}cr` : 'credits unverified'}</span>
                                       </button>
                                     )
                                   })}
@@ -582,8 +599,7 @@ function PlannerWizard() {
                           })}
                         </div>
                       </div>
-                    )
-                  })}
+                  ))}
                 </div>
               )}
 
@@ -593,10 +609,10 @@ function PlannerWizard() {
                 <div className="flex gap-2">
                   <Input id="transfer-code" placeholder="Course code (e.g. COMP 1001)" className="h-8 text-xs flex-1" />
                   <select id="transfer-term" className="rounded-lg border border-slate-200 bg-white px-2 text-xs h-8">
-                    {Array.from({ length: (yearOfStudy ?? 1) }, (_, i) => startYear + i).flatMap((yr) => [
-                      <option key={`Fall-${yr}`} value={`Fall-${yr}`}>Fall {yr}</option>,
-                      <option key={`Winter-${yr}`} value={`Winter-${yr}`}>Winter {yr}</option>,
-                    ])}
+                    {(previewPlan?.termSlots ?? [])
+                      .filter((slot, index) => (slot.relativeYear ?? Math.floor(index / 3) + 1) < (yearOfStudy ?? 1))
+                      .map((slot) => <option key={slot.id} value={slot.id}>{slot.term} {slot.year}</option>)}
+                    {yearOfStudy === 1 && <option value={`${startTerm}-${startYear}`}>{startTerm} {startYear}</option>}
                   </select>
                   <Button onClick={() => {
                     const codeEl = document.getElementById('transfer-code') as HTMLInputElement
@@ -631,7 +647,7 @@ function PlannerWizard() {
                   <ArrowLeft className="h-3.5 w-3.5" /> Back
                 </Button>
                 <Button onClick={finish} variant="gradient" size="sm" className="gap-2 px-6">
-                  <Sparkles className="h-4 w-4" /> Generate My Plan
+                  <Sparkles className="h-4 w-4" /> {program?.planningMode === 'verified' ? 'Build Catalog Plan' : 'Create Manual Workspace'}
                 </Button>
               </div>
               <p className="mt-3 text-center text-[11px] text-slate-400">Skip this step if you haven&apos;t taken anything yet — you can mark courses complete later.</p>
@@ -642,7 +658,7 @@ function PlannerWizard() {
 
         <p className="mt-8 text-center text-[11px] text-slate-400">
           <Info className="inline h-3 w-3 mr-1" />
-          Informational only. Verify requirements with a MUN academic advisor.
+          Catalog provenance is shown for every program. Always verify the final schedule with a Memorial academic advisor.
         </p>
       </div>
     </div>
@@ -738,11 +754,10 @@ function PlannerMain({
   const [catalogSearch, setCatalogSearch] = useState('')
   const [catalogDept, setCatalogDept] = useState('ALL')
   const [catalogLevel, setCatalogLevel] = useState('ALL')
-  const [catalogTerm, setCatalogTerm] = useState<Term | 'ALL'>('ALL')
   const [selectedCourse, setSelectedCourse] = useState<MUNCourse | null>(null)
   const [markingComplete, setMarkingComplete] = useState<string | null>(null)
-  const [completeGrade, setCompleteGrade] = useState('80')
-  const [completeTerm, setCompleteTerm] = useState('Fall 2024')
+  const [completeGrade, setCompleteGrade] = useState('')
+  const [completeTerm, setCompleteTerm] = useState('')
   const [addingScenario, setAddingScenario] = useState(false)
   const [newScenarioName, setNewScenarioName] = useState('')
   const [inlineAddTerm, setInlineAddTerm] = useState<string | null>(null)
@@ -750,15 +765,15 @@ function PlannerMain({
 
   const prog = activeScenario.declaredPrograms[0] ? getProgram(activeScenario.declaredPrograms[0]) : null
   const fac = prog ? getFaculty(prog.facultyId) : null
+  const university = getUniversity(activeScenario.universityId ?? prog?.universityId ?? 'mun')
   const totalCreds = totalCreditsEarned + totalCreditsPlanned
-  const graduationTarget = prog?.totalCreditHoursRequired ?? 120
-  const progressPct = Math.min(100, Math.round((totalCreds / graduationTarget) * 100))
+  const graduationTarget = prog?.totalCreditHoursRequired ?? null
+  const progressPct = graduationTarget ? Math.min(100, Math.round((totalCreds / graduationTarget) * 100)) : null
 
   // Catalog filter
   const filteredCourses = MUN_COURSES.filter((c) => {
     if (catalogDept !== 'ALL' && c.department !== catalogDept) return false
     if (catalogLevel !== 'ALL' && !String(c.level).startsWith(catalogLevel[0])) return false
-    if (catalogTerm !== 'ALL' && !c.typicalAvailability.includes(catalogTerm as Term)) return false
     if (catalogSearch) {
       const q = catalogSearch.toLowerCase()
       return c.code.toLowerCase().includes(q) || c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
@@ -789,21 +804,43 @@ function PlannerMain({
 
   function handleMarkComplete() {
     if (!markingComplete) return
-    const g = parseInt(completeGrade)
-    const letter = g >= 90 ? 'A+' : g >= 85 ? 'A' : g >= 80 ? 'A-' : g >= 77 ? 'B+' : g >= 73 ? 'B' : g >= 70 ? 'B-' : g >= 67 ? 'C+' : g >= 63 ? 'C' : g >= 60 ? 'C-' : g >= 55 ? 'D' : 'F'
-    markCompleted({ courseCode: markingComplete, grade: g, letterGrade: letter, term: completeTerm })
-    toast.success(`${markingComplete} marked as completed (${letter})`)
+    const term = completeTerm.trim()
+    if (!term) {
+      toast.error('Enter the term when you completed this course.')
+      return
+    }
+
+    const gradeText = completeGrade.trim()
+    const grade = gradeText ? Number(gradeText) : undefined
+    if (grade !== undefined && (!Number.isFinite(grade) || grade < 0 || grade > 100)) {
+      toast.error('Grade must be between 0 and 100, or left blank.')
+      return
+    }
+
+    const letterGrade = grade === undefined
+      ? undefined
+      : grade >= 90 ? 'A+' : grade >= 85 ? 'A' : grade >= 80 ? 'A-' : grade >= 77 ? 'B+' : grade >= 73 ? 'B' : grade >= 70 ? 'B-' : grade >= 67 ? 'C+' : grade >= 63 ? 'C' : grade >= 60 ? 'C-' : grade >= 55 ? 'D' : 'F'
+
+    markCompleted({ courseCode: markingComplete, grade, letterGrade, term })
+    toast.success(`${markingComplete} marked as completed${letterGrade ? ` (${letterGrade})` : ''}`)
     setMarkingComplete(null)
+    setCompleteGrade('')
+    setCompleteTerm('')
   }
 
-  const termsByYear = activeScenario.termSlots.reduce<Record<number, typeof activeScenario.termSlots>>((acc, slot) => {
-    acc[slot.year] = acc[slot.year] ?? []
-    acc[slot.year].push(slot)
+  const termsByYear = activeScenario.termSlots.reduce<Record<number, TermSlot[]>>((acc, slot, index) => {
+    const relativeYear = slot.relativeYear ?? Math.floor(index / 3) + 1
+    acc[relativeYear] = acc[relativeYear] ?? []
+    acc[relativeYear].push(slot)
     return acc
   }, {})
 
   const warningCodes = new Set(prereqWarnings.map((w) => w.course))
   const depts = Array.from(new Set(MUN_COURSES.map((c) => c.department))).sort()
+  const mappedRequirements = requirements.filter((requirement) => requirement.req.ruleType !== 'MANUAL')
+  const uncoveredMappedRequirements = mappedRequirements.filter((requirement) => !requirement.isPlanned)
+  const manualRequirements = requirements.filter((requirement) => requirement.req.ruleType === 'MANUAL')
+  const lastPlannedSlot = [...activeScenario.termSlots].reverse().find((slot) => slot.courses.length > 0)
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -817,8 +854,14 @@ function PlannerMain({
               {prog?.name ?? 'Degree Planner'}
             </h1>
             <Badge className={cn('text-[10px]', fac?.color, fac?.textColor, fac?.borderColor)}>{prog?.degreeType}</Badge>
+            <Badge className={cn(
+              'text-[10px]',
+              prog?.planningMode === 'verified'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-50 text-slate-600',
+            )}>{prog?.planningMode === 'verified' ? 'Mapped catalog' : 'Manual mode'}</Badge>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">Memorial University of Newfoundland · {fac?.shortName}</p>
+          <p className="mt-0.5 text-xs text-slate-500">{university?.name ?? 'University'} · {fac?.shortName} · {prog?.catalogYear}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Scenario switcher */}
@@ -850,10 +893,28 @@ function PlannerMain({
         </div>
       </motion.div>
 
-      {/* Disclaimer */}
-      <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-        <p className="text-[11px] text-amber-800"><strong>Informational only.</strong> Always verify requirements with your academic advisor and MUN&apos;s official catalog.</p>
+      {/* Catalog status */}
+      <div className={cn(
+        'mb-4 flex items-start gap-2 rounded-xl border px-3 py-2.5',
+        prog?.planningMode === 'verified' ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50',
+      )}>
+        {prog?.planningMode === 'verified'
+          ? <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
+          : <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />}
+        <div className="min-w-0 flex-1">
+          <p className={cn('text-[11px]', prog?.planningMode === 'verified' ? 'text-emerald-900' : 'text-amber-900')}>
+            <strong>{prog?.planningMode === 'verified' ? 'Catalog-backed requirements.' : 'Manual planning mode.'}</strong>{' '}
+            {prog?.statusNote} Course availability changes by term, so confirm registration choices with an advisor.
+          </p>
+          {prog?.officialUrl && (
+            <a href={prog.officialUrl} target="_blank" rel="noreferrer" className={cn(
+              'mt-1 inline-flex items-center gap-1 text-[11px] font-semibold hover:underline',
+              prog.planningMode === 'verified' ? 'text-emerald-700' : 'text-amber-700',
+            )}>
+              Official program source <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -861,8 +922,8 @@ function PlannerMain({
         {[
           { label:'Completed', value:totalCreditsEarned, sub:`${activeScenario.completed.length} courses`, color:'text-emerald-700', bg:'bg-emerald-50' },
           { label:'Planned', value:totalCreditsPlanned, sub:'in future terms', color:'text-emerald-700', bg:'bg-emerald-50' },
-          { label:'Progress', value:`${progressPct}%`, sub:`of ${graduationTarget} cr`, color:'text-blue-700', bg:'bg-blue-50' },
-          { label:'Warnings', value:prereqWarnings.length, sub:prereqWarnings.length===0?'All clear':'prereq issues', color:prereqWarnings.length>0?'text-rose-700':'text-emerald-700', bg:prereqWarnings.length>0?'bg-rose-50':'bg-emerald-50' },
+          { label:'Progress', value:progressPct === null ? '—' : `${progressPct}%`, sub:graduationTarget ? `of ${graduationTarget} cr` : 'official total not mapped', color:'text-violet-700', bg:'bg-violet-50' },
+          { label:'Plan issues', value:prereqWarnings.length, sub:prereqWarnings.length===0?'All clear':'review required', color:prereqWarnings.length>0?'text-rose-700':'text-emerald-700', bg:prereqWarnings.length>0?'bg-rose-50':'bg-emerald-50' },
         ].map((s) => (
           <Card key={s.label} className={`border-0 shadow-none ${s.bg}`}>
             <CardContent className="p-3">
@@ -875,22 +936,26 @@ function PlannerMain({
       </div>
 
       {/* Progress bar */}
-      <div className="mb-4">
-        <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
-          <div className="absolute inset-y-0 left-0 bg-emerald-500 rounded-l-full transition-all"
-            style={{ width: `${Math.min(100, Math.round((totalCreditsEarned / graduationTarget) * 100))}%` }} />
-          <div className="absolute inset-y-0 bg-emerald-400/70 transition-all"
-            style={{
-              left: `${Math.min(100, Math.round((totalCreditsEarned / graduationTarget) * 100))}%`,
-              width: `${Math.min(100 - Math.round((totalCreditsEarned / graduationTarget) * 100), Math.round((totalCreditsPlanned / graduationTarget) * 100))}%`,
-            }} />
+      {graduationTarget ? (
+        <div className="mb-4">
+          <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+            <div className="absolute inset-y-0 left-0 bg-emerald-500 rounded-l-full transition-all"
+              style={{ width: `${Math.min(100, Math.round((totalCreditsEarned / graduationTarget) * 100))}%` }} />
+            <div className="absolute inset-y-0 bg-emerald-400/70 transition-all"
+              style={{
+                left: `${Math.min(100, Math.round((totalCreditsEarned / graduationTarget) * 100))}%`,
+                width: `${Math.min(100 - Math.round((totalCreditsEarned / graduationTarget) * 100), Math.round((totalCreditsPlanned / graduationTarget) * 100))}%`,
+              }} />
+          </div>
+          <div className="mt-1 flex items-center gap-4 text-[10px] text-slate-400">
+            <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Completed</span>
+            <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Planned</span>
+            <span className="ml-auto">{Math.max(0, graduationTarget - totalCreds)} cr not yet placed</span>
+          </div>
         </div>
-        <div className="mt-1 flex items-center gap-4 text-[10px] text-slate-400">
-          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Completed</span>
-          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Planned</span>
-          <span className="ml-auto">{Math.max(0, graduationTarget - totalCreds)} cr remaining to graduate</span>
-        </div>
-      </div>
+      ) : (
+        <p className="mb-4 text-[11px] text-slate-500">ScholarFlow is not guessing a degree total for this program. Use the official source while planning manually.</p>
+      )}
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab}>
@@ -915,7 +980,7 @@ function PlannerMain({
               {activeScenario.completed.map((entry) => (
                 <div key={entry.courseCode} className="flex items-center gap-1">
                   <CourseChip code={entry.courseCode} draggable isCompleted onRemove={() => removeCompleted(entry.courseCode)} />
-                  <span className="text-[10px] text-emerald-600 font-bold">{entry.letterGrade}</span>
+                  {entry.letterGrade && <span className="text-[10px] text-emerald-600 font-bold">{entry.letterGrade}</span>}
                 </div>
               ))}
               {activeScenario.completed.length === 0 && <p className="text-[11px] text-emerald-300 italic">No completed courses yet</p>}
@@ -923,13 +988,15 @@ function PlannerMain({
           </div>
 
           {/* Year groups */}
-          {Object.entries(termsByYear).map(([year, slots]) => (
-            <div key={year} className="mb-6">
-              <h3 className="mb-2 text-xs font-bold text-slate-600 uppercase tracking-widest">Year {parseInt(year) - (activeScenario.termSlots[0]?.year ?? parseInt(year)) + 1} — {year}/{parseInt(year)+1}</h3>
+          {Object.entries(termsByYear).map(([relativeYear, slots]) => (
+            <div key={relativeYear} className="mb-6">
+              <h3 className="mb-2 text-xs font-bold text-slate-600 uppercase tracking-widest">
+                Year {relativeYear} · {slots[0]?.term} {slots[0]?.year} to {slots.at(-1)?.term} {slots.at(-1)?.year}
+              </h3>
               <div className="grid gap-3 sm:grid-cols-3">
                 {slots.map((slot) => {
-                  const load = slot.courses.reduce((s, c) => s + (getCourse(c)?.creditHours ?? 3), 0)
-                  const heavy = load > 15
+                  const load = slot.courses.reduce((total, code) => total + creditsFor(code, activeScenario.completed), 0)
+                  const heavy = load > (prog?.maxCreditsPerTerm ?? 15)
                   return (
                     <div key={slot.id}
                       className={cn('min-h-[90px] rounded-xl border-2 border-dashed p-3 transition-all',
@@ -980,11 +1047,14 @@ function PlannerMain({
             <Card className="mt-2 border-amber-200 bg-amber-50">
               <CardContent className="p-4">
                 <p className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" /> Prerequisite Warnings
+                  <AlertTriangle className="h-4 w-4" /> Plan Validation Issues
                 </p>
                 <div className="space-y-1">
-                  {prereqWarnings.map((w, i) => (
-                    <p key={i} className="text-xs text-amber-700"><strong>{w.course}</strong> in {w.termId.replace('-', ' ')}: {w.message}</p>
+                  {prereqWarnings.map((w, index) => (
+                    <p key={`${w.termId}-${w.course}-${index}`} className="text-xs text-amber-700">
+                      <span className="mr-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase">{w.kind.replace('-', ' ')}</span>
+                      <strong>{w.course}</strong> in {w.termId.replace('-', ' ')}: {w.message}
+                    </p>
                   ))}
                 </div>
               </CardContent>
@@ -994,35 +1064,42 @@ function PlannerMain({
 
         {/* ── REQUIREMENTS ───────────────────────────────────────────── */}
         <TabsContent value="requirements">
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
+            <div>
+              <p className="text-xs font-semibold text-slate-800">Mapped requirement audit</p>
+              <p className="text-[10px] text-slate-500">Completed credits and future planned credits are tracked separately.</p>
+            </div>
+            {prog?.officialUrl && <a href={prog.officialUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline">Official rules <ExternalLink className="h-3 w-3" /></a>}
+          </div>
           <div className="space-y-3">
             {requirements.map((sat) => {
               const pct = sat.creditsRequired > 0 ? Math.min(100, Math.round((sat.creditsSatisfied / sat.creditsRequired) * 100)) : (sat.isComplete ? 100 : 0)
+              const isManual = sat.req.ruleType === 'MANUAL'
               return (
-                <Card key={sat.req.id} className={cn(sat.isComplete && 'border-emerald-200 bg-emerald-50/30')}>
+                <Card key={sat.req.id} className={cn(
+                  sat.isComplete && 'border-emerald-200 bg-emerald-50/30',
+                  !sat.isComplete && sat.isPlanned && 'border-violet-200 bg-violet-50/30',
+                )}>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 mb-2">
                       {sat.isComplete ? <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                        : sat.isPlanned ? <Clock className="h-4 w-4 text-violet-500 flex-shrink-0" />
+                        : isManual ? <Info className="h-4 w-4 text-amber-500 flex-shrink-0" />
                         : sat.creditsSatisfied > 0 ? <Clock className="h-4 w-4 text-amber-500 flex-shrink-0" />
                         : <Circle className="h-4 w-4 text-slate-300 flex-shrink-0" />}
                       <span className={cn('text-sm font-semibold flex-1', sat.isComplete ? 'text-emerald-800' : 'text-slate-800')}>{sat.req.label}</span>
-                      <span className="text-xs text-slate-400">{sat.creditsSatisfied}/{sat.creditsRequired > 0 ? sat.creditsRequired : '?'} cr</span>
+                      {isManual
+                        ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Manual check</span>
+                        : <span className="text-xs text-slate-400">{sat.creditsSatisfied}/{sat.creditsRequired > 0 ? sat.creditsRequired : '?'} cr</span>}
                     </div>
-                    {sat.creditsRequired > 0 && (
+                    {sat.creditsRequired > 0 && !isManual && (
                       <Progress value={pct} className="h-1.5 mb-2"
-                        indicatorClassName={sat.isComplete ? 'bg-emerald-500' : 'bg-emerald-500'} />
+                        indicatorClassName={sat.isComplete ? 'bg-emerald-500' : sat.isPlanned ? 'bg-violet-500' : 'bg-amber-500'} />
                     )}
-                    {sat.satisfiedBy.length > 0 && (
+                    {(sat.completedBy.length > 0 || sat.plannedBy.length > 0) && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        <span className="text-[10px] text-slate-400 mr-0.5 mt-0.5">By:</span>
-                        {sat.satisfiedBy.map((code) => {
-                          const doubleCount = requirements.filter((r) => r.satisfiedBy.includes(code) && r.req.id !== sat.req.id).length > 0
-                          return (
-                            <span key={code} className={cn('rounded border px-1.5 py-0.5 text-[10px] font-medium', dc(getCourse(code)?.department ?? 'COMP'), doubleCount && 'ring-1 ring-emerald-400')}
-                              title={doubleCount ? 'Double-counted' : undefined}>
-                              {code}{doubleCount && ' ×2'}
-                            </span>
-                          )
-                        })}
+                        {sat.completedBy.map((code) => <span key={`done-${code}`} className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">{code} · done</span>)}
+                        {sat.plannedBy.map((code) => <span key={`plan-${code}`} className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">{code} · planned</span>)}
                       </div>
                     )}
                     {sat.req.ruleType === 'SPECIFIC_COURSES' && sat.req.courses && (
@@ -1032,18 +1109,35 @@ function PlannerMain({
                         ))}
                       </div>
                     )}
+                    {sat.req.note && <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{sat.req.note}</p>}
                   </CardContent>
                 </Card>
               )
             })}
           </div>
           <p className="mt-3 text-[11px] text-slate-400 flex items-center gap-1.5">
-            <Info className="h-3.5 w-3.5" /> <span>Courses marked <strong>×2</strong> satisfy multiple requirements simultaneously — verify with your advisor whether this is permitted.</span>
+            <Info className="h-3.5 w-3.5" /> <span>The engine avoids double-counting where the mapped rule disallows it. Manual policy requirements still require an official degree audit.</span>
           </p>
         </TabsContent>
 
         {/* ── CATALOG ──────────────────────────────────────────────────── */}
         <TabsContent value="catalog">
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] leading-relaxed text-slate-600">
+                This is a source-backed subset used by the mapped Computer Science plan, not a live registration feed. ScholarFlow does not invent instructors or future term offerings.
+              </p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                <a href={PLANNER_SOURCE_LINKS.computerScienceCourses} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline">
+                  Official COMP catalog <ExternalLink className="h-3 w-3" />
+                </a>
+                <a href={PLANNER_SOURCE_LINKS.mathematicsCourses} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline">
+                  Official MATH/STAT catalog <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+          </div>
           <div className="mb-4 flex flex-wrap gap-2">
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -1066,13 +1160,6 @@ function PlannerMain({
                 <option value="2000">2000-level</option>
                 <option value="3000">3000-level</option>
                 <option value="4000">4000-level</option>
-              </select>
-              <select value={catalogTerm} onChange={(e) => setCatalogTerm(e.target.value as Term | 'ALL')}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs h-9">
-                <option value="ALL">All Terms</option>
-                <option value="Fall">Fall</option>
-                <option value="Winter">Winter</option>
-                <option value="Spring">Spring</option>
               </select>
             </div>
           </div>
@@ -1099,7 +1186,6 @@ function PlannerMain({
                         <span className="text-[10px] text-slate-400">{course.creditHours} cr</span>
                         {isDone && <Badge variant="success" className="text-[9px] py-0">Done</Badge>}
                         {inPlan && !isDone && <Badge variant="info" className="text-[9px] py-0">In Plan</Badge>}
-                        {course.hasLab && <span className="text-[9px] bg-slate-100 text-slate-500 px-1 rounded">Lab</span>}
                       </div>
                       <p className="text-xs font-semibold text-slate-800 leading-tight">{course.title}</p>
                     </div>
@@ -1113,21 +1199,27 @@ function PlannerMain({
                       <div>
                         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Prerequisites</p>
                         <p className="text-[11px] text-slate-600">{describePrereqs(course.prerequisites)}</p>
+                        {course.prerequisiteNote && <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{course.prerequisiteNote}</p>}
                       </div>
 
-                      {course.corequisites && (
+                      {(course.corequisites?.length || course.corequisiteChoices?.length) && (
                         <div>
                           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Corequisites</p>
-                          <p className="text-[11px] text-slate-600">{course.corequisites.join(', ')}</p>
+                          {course.corequisites?.length ? <p className="text-[11px] text-slate-600">{course.corequisites.join(', ')}</p> : null}
+                          {course.corequisiteChoices?.length ? (
+                            <p className="text-[11px] text-slate-600">{course.corequisiteChoices.map((group) => group.join(' + ')).join(' or ')}</p>
+                          ) : null}
                         </div>
                       )}
 
                       <div className="flex gap-4">
                         <div>
-                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Offered</p>
-                          <div className="flex gap-1">
-                            {course.typicalAvailability.map((t) => <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">{t}</span>)}
-                          </div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Availability</p>
+                          {course.typicalAvailability?.length ? (
+                            <div className="flex gap-1">
+                              {course.typicalAvailability.map((term) => <span key={term} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">{term}</span>)}
+                            </div>
+                          ) : <p className="text-[11px] text-slate-500">Check the current registration schedule</p>}
                         </div>
                         {course.mutuallyExclusiveWith && (
                           <div>
@@ -1137,19 +1229,10 @@ function PlannerMain({
                         )}
                       </div>
 
-                      {course.professors && course.professors.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1 flex items-center gap-1">
-                            <Users className="h-3 w-3" /> Typical Instructors
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {course.professors.map((p) => (
-                              <span key={p} className="rounded bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">{p}</span>
-                            ))}
-                          </div>
-                          <p className="text-[9px] text-slate-400 mt-0.5 italic">Assignments vary each year — verify with MUN course schedule.</p>
-                        </div>
-                      )}
+                      <a href={course.officialUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline">
+                        Official course source <ExternalLink className="h-3 w-3" />
+                      </a>
 
                       <div>
                         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Add to term:</p>
@@ -1178,7 +1261,7 @@ function PlannerMain({
             <Card>
               <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">What&apos;s Left</CardTitle></CardHeader>
               <CardContent className="px-5 pb-5 space-y-3">
-                {requirements.filter((r) => !r.isComplete).map((sat) => (
+                {uncoveredMappedRequirements.map((sat) => (
                   <div key={sat.req.id}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-medium text-slate-700">{sat.req.label}</span>
@@ -1188,10 +1271,24 @@ function PlannerMain({
                       className="h-1.5" indicatorClassName="bg-emerald-500" />
                   </div>
                 ))}
-                {requirements.filter((r) => !r.isComplete).length === 0 && (
+                {uncoveredMappedRequirements.length === 0 && mappedRequirements.length > 0 && (
                   <div className="text-center py-4">
                     <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
-                    <p className="text-sm font-semibold text-emerald-700">All requirements satisfied!</p>
+                    <p className="text-sm font-semibold text-emerald-700">All mapped rules are covered</p>
+                    <p className="mt-1 text-[10px] text-slate-500">This includes completed and currently planned courses; it is not a registrar degree audit.</p>
+                  </div>
+                )}
+                {mappedRequirements.length === 0 && (
+                  <p className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">Course-level requirements are not mapped for this program yet. Build the plan manually from the official program source.</p>
+                )}
+                {manualRequirements.length > 0 && (
+                  <div className="border-t border-slate-100 pt-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-amber-600">Advisor or manual checks</p>
+                    {manualRequirements.map((requirement) => (
+                      <p key={requirement.req.id} className="mb-1.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-600">
+                        <Info className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" /> {requirement.req.label}
+                      </p>
+                    ))}
                   </div>
                 )}
               </CardContent>
@@ -1202,61 +1299,51 @@ function PlannerMain({
               <CardContent className="px-5 pb-5 space-y-2.5">
                 {[
                   { label:'Completed', value:totalCreditsEarned, color:'text-emerald-600' },
-                  { label:'Planned', value:totalCreditsPlanned, color:'text-emerald-600' },
-                  { label:'Total', value:totalCreds, color:'text-slate-800' },
-                  { label:'Required', value:graduationTarget, color:'text-slate-500' },
-                  { label:'Still needed', value:Math.max(0, graduationTarget - totalCreds), color:'text-rose-600' },
+                  { label:'Planned', value:totalCreditsPlanned, color:'text-violet-600' },
+                  { label:'Total placed', value:totalCreds, color:'text-slate-800' },
+                  { label:'Official degree total', value:graduationTarget, color:'text-slate-500' },
+                  { label:'Not yet placed', value:graduationTarget === null ? null : Math.max(0, graduationTarget - totalCreds), color:'text-rose-600' },
                 ].map((row) => (
                   <div key={row.label} className="flex items-center justify-between">
                     <span className="text-sm text-slate-600">{row.label}</span>
-                    <span className={cn('text-sm font-bold', row.color)}>{row.value} cr</span>
+                    <span className={cn('text-sm font-bold', row.color)}>{row.value === null ? 'Not mapped' : `${row.value} cr`}</span>
                   </div>
                 ))}
               </CardContent>
             </Card>
 
-            {/* Graduation estimate */}
             <Card className="lg:col-span-2">
-              <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Estimated Graduation</CardTitle></CardHeader>
+              <CardHeader className="pb-3"><CardTitle className="text-sm font-semibold">Plan Confidence</CardTitle></CardHeader>
               <CardContent className="px-5 pb-5">
-                {(() => {
-                  const remaining = Math.max(0, graduationTarget - totalCreds)
-                  const termsNeeded = Math.ceil(remaining / 15)
-                  const startSlot = activeScenario.termSlots[0]
-                  let gradYear = startSlot?.year ?? new Date().getFullYear()
-                  let gradTerm: Term = startSlot?.term ?? 'Fall'
-                  const cycle: Term[] = ['Fall', 'Winter']
-                  let ti = cycle.indexOf(gradTerm)
-                  for (let i = 0; i < termsNeeded; i++) {
-                    ti = (ti + 1) % cycle.length
-                    if (ti === 0) gradYear++
-                  }
-                  gradTerm = cycle[ti]
-                  return (
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
-                        <GraduationCap className="h-6 w-6 text-emerald-600" />
-                        <div>
-                          <p className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide">Estimated</p>
-                          <p className="text-lg font-extrabold text-emerald-800">{gradTerm} {gradYear}</p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        Based on <strong>{remaining} credits remaining</strong> at ~15 cr/term (Fall + Winter).<br />
-                        Drag courses on the board to update this estimate.
-                      </p>
-                    </div>
-                  )
-                })()}
+                <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  {prog?.planningMode === 'verified'
+                    ? <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    : <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />}
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {prog?.planningMode === 'verified' ? 'Constraint-checked catalog plan' : 'Source-backed manual workspace'}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      {prog?.planningMode === 'verified'
+                        ? `ScholarFlow checks mapped prerequisites, corequisites, credit rules, duplicate courses, exclusions, and term load. ${lastPlannedSlot ? `The current course sequence ends in ${lastPlannedSlot.term} ${lastPlannedSlot.year}, but that is not a graduation promise.` : 'No future courses are placed yet.'}`
+                        : 'ScholarFlow verifies the program name and official link, but it does not fabricate a course sequence or graduation date when detailed rules are not mapped.'}
+                    </p>
+                    <p className="mt-2 text-[10px] leading-relaxed text-slate-400">Future minimum-grade prerequisites remain conditional. Live section availability, reserved-seat rules, admission decisions, transfer rulings, substitutions, and advisor approvals must be confirmed with Memorial.</p>
+                  </div>
+                </div>
 
                 <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                   {requirements.map((sat) => (
                     <div key={sat.req.id} className="flex items-center gap-2">
                       {sat.isComplete
                         ? <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                        : sat.isPlanned ? <Clock className="h-4 w-4 text-violet-500 flex-shrink-0" />
+                        : sat.req.ruleType === 'MANUAL' ? <Info className="h-4 w-4 text-amber-500 flex-shrink-0" />
                         : <Circle className="h-4 w-4 text-slate-300 flex-shrink-0" />}
-                      <span className={cn('text-xs flex-1', sat.isComplete ? 'text-emerald-700 line-through' : 'text-slate-700')}>{sat.req.label}</span>
-                      {!sat.isComplete && <span className="text-[10px] text-slate-400">{Math.max(0, sat.creditsRequired - sat.creditsSatisfied)} cr</span>}
+                      <span className={cn('text-xs flex-1', sat.isComplete ? 'text-emerald-700' : sat.isPlanned ? 'text-violet-700' : 'text-slate-700')}>{sat.req.label}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {sat.isComplete ? 'completed' : sat.isPlanned ? 'covered in plan' : sat.req.ruleType === 'MANUAL' ? 'manual check' : `${Math.max(0, sat.creditsRequired - sat.creditsSatisfied)} cr unplaced`}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -1281,8 +1368,8 @@ function PlannerMain({
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {[
-                        { label:'Completed (cr)', fn: (s: PlannerScenario) => s.completed.reduce((t, c) => t + (getCourse(c.courseCode)?.creditHours ?? 3), 0) },
-                        { label:'Planned (cr)', fn: (s: PlannerScenario) => s.termSlots.flatMap((sl) => sl.courses).reduce((t, c) => t + (getCourse(c)?.creditHours ?? 3), 0) },
+                        { label:'Completed (cr)', fn: (s: PlannerScenario) => s.completed.reduce((total, entry) => total + creditsFor(entry.courseCode, s.completed), 0) },
+                        { label:'Planned (cr)', fn: (s: PlannerScenario) => s.termSlots.flatMap((slot) => slot.courses).reduce((total, code) => total + creditsFor(code, s.completed), 0) },
                         { label:'Reqs complete', fn: (s: PlannerScenario) => { const r = evaluateRequirements(s, s.declaredPrograms); return `${r.filter((x) => x.isComplete).length}/${r.length}` } },
                         { label:'Prereq warnings', fn: (s: PlannerScenario) => checkPrerequisites(s).length },
                       ].map((row) => (
@@ -1312,14 +1399,14 @@ function PlannerMain({
             <p className="mb-4 text-sm text-slate-500">{markingComplete} · {getCourse(markingComplete)?.title}</p>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">Final Grade (%)</label>
+                <label className="text-xs font-medium text-slate-700 block mb-1">Final Grade (%) <span className="font-normal text-slate-400">optional</span></label>
                 <Input type="number" min={0} max={100} value={completeGrade}
                   onChange={(e) => setCompleteGrade(e.target.value)} className="h-9 text-sm" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Term Taken</label>
                 <Input value={completeTerm} onChange={(e) => setCompleteTerm(e.target.value)}
-                  placeholder="e.g. Fall 2024" className="h-9 text-sm" />
+                  placeholder="e.g. Fall 2025" className="h-9 text-sm" />
               </div>
             </div>
             <div className="mt-4 flex gap-2">

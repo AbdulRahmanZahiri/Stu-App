@@ -144,9 +144,9 @@ export default function LandingPage() {
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
             </Link>
-            <Link href="/dashboard">
+            <Link href="/login">
               <Button variant="outline" size="xl" className="w-full sm:w-auto border-slate-200">
-                View Demo
+                Sign In
               </Button>
             </Link>
           </motion.div>

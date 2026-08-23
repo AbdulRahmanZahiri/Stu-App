@@ -63,7 +63,7 @@ function LoginPageContent() {
       if (authError.message.includes('Invalid login credentials')) {
         setError('Incorrect email or password. Please try again.')
       } else if (authError.message.includes('Email not confirmed')) {
-        setError('Email not confirmed. Disable "Confirm email" in your Supabase Auth settings.')
+        setError('Email not confirmed. Please contact support or try signing up again.')
       } else {
         setError(authError.message)
       }
@@ -220,7 +220,7 @@ function LoginPageContent() {
             {/* Error */}
             {registered && !error && (
               <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                Account created. Check your email to confirm it, then sign in.
+                Account created! Sign in below.
               </div>
             )}
             {error && (
@@ -307,19 +307,6 @@ function LoginPageContent() {
                 </button>
               </div>
             </form>
-
-            {/* Try Demo */}
-            <div className="my-5 flex items-center gap-4">
-              <div className="h-px flex-1 bg-slate-100" />
-              <span className="text-xs text-slate-400">or</span>
-              <div className="h-px flex-1 bg-slate-100" />
-            </div>
-
-            <Link href="/dashboard">
-              <button className="w-full rounded-xl border-2 border-emerald-200 bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 transition-all duration-200 hover:border-emerald-400 hover:bg-emerald-100">
-                Try Demo — no account needed
-              </button>
-            </Link>
 
             {/* Divider */}
             <div className="my-5 flex items-center gap-4">
