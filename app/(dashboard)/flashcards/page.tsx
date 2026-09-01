@@ -115,7 +115,7 @@ export default function FlashcardsPage() {
   async function extractPdfText(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer()
     const pdfjsLib = await import('pdfjs-dist')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     const parts: string[] = []
     for (let i = 1; i <= pdf.numPages; i++) {

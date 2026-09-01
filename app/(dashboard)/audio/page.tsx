@@ -258,6 +258,23 @@ export default function AudioStudyPage() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [segIndex, showTranscript])
 
+  // ── PDF extraction (client-side via PDF.js) ───────────────────────────────
+  async function extractPdfText(file: File): Promise<string> {
+    const arrayBuffer = await file.arrayBuffer()
+    const pdfjsLib = await import('pdfjs-dist')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    const parts: string[] = []
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      parts.push(content.items.map((item) => ('str' in item ? item.str : '')).join(' '))
+    }
+    const text = parts.join('\n').trim()
+    if (text.length < 50) throw new Error('This PDF has no selectable text. Use Paste Text instead.')
+    return text
+  }
+
   // ── Generation ────────────────────────────────────────────────────────────
   async function generate() {
     setGenerating(true)
@@ -275,12 +292,7 @@ export default function AudioStudyPage() {
         title = note.title
       } else if (tab === 'pdf') {
         if (!pdfFile) throw new Error('Upload a PDF first')
-        const fd = new FormData()
-        fd.append('file', pdfFile)
-        const ex = await fetch('/api/extract-pdf', { method: 'POST', body: fd })
-        const exData = await ex.json()
-        if (!ex.ok) throw new Error(exData.error || 'Failed to read PDF')
-        source = exData.text
+        source = await extractPdfText(pdfFile)
         title = pdfFile.name.replace(/\.[^.]+$/, '')
       } else {
         source = pasteText.trim()
