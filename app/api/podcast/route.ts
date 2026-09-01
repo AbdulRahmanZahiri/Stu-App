@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const completion = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'qwen/qwen3.8-27b',
       max_tokens: 1800,
       temperature: 0.75,
       messages: [

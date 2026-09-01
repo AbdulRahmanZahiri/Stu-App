@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const stream = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'qwen/qwen3.8-27b',
       max_tokens: 1024,
       stream: true,
       messages: [{ role: 'system', content: `${SYSTEM_PROMPT}${courseContext}` }, ...messages],

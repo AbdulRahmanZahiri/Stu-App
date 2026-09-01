@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const res = await getClient().chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model: 'qwen/qwen3.8-27b',
       max_tokens: 1200,
       temperature: 0.3,
       response_format: { type: 'json_object' },
