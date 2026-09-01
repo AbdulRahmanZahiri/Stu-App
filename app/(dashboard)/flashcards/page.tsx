@@ -130,9 +130,14 @@ export default function FlashcardsPage() {
         const fd = new FormData()
         fd.append('file', pdfFile)
         const ex = await fetch('/api/extract-pdf', { method: 'POST', body: fd })
-        const exData = await ex.json()
+        let exData: { error?: string; text?: string }
+        try {
+          exData = await ex.json()
+        } catch {
+          throw new Error('Failed to read PDF — try the Paste Text option')
+        }
         if (!ex.ok) throw new Error(exData.error || 'Failed to read PDF')
-        source = exData.text
+        source = exData.text ?? ''
         title = pdfFile.name.replace(/\.[^.]+$/, '')
       } else {
         source = pasteText.trim()
@@ -144,12 +149,18 @@ export default function FlashcardsPage() {
       const res = await fetch('/api/flashcards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, title, count: parseInt(cardCount) }),
+        body: JSON.stringify({ source: source.slice(0, 40_000), title, count: parseInt(cardCount) }),
       })
-      const data = await res.json()
+
+      let data: { error?: string; cards?: Flashcard[]; title?: string }
+      try {
+        data = await res.json()
+      } catch {
+        throw new Error(`Server error (${res.status}) — please try again`)
+      }
       if (!res.ok) throw new Error(data.error || 'Generation failed')
 
-      setCards(data.cards)
+      setCards(data.cards ?? [])
       setCardIndex(0)
       setIsFlipped(false)
       setResults([])
