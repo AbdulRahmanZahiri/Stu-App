@@ -123,10 +123,14 @@ async function translateText(text: string, targetLang: string): Promise<string> 
 
 export default function CommunityPage() {
   const [rooms, setRooms] = useState<ChatRoom[]>([])
+  const [myRoomIds, setMyRoomIds] = useState<Set<string>>(new Set())
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [search, setSearch] = useState('')
+  const [browseSearch, setBrowseSearch] = useState('')
+  const [showBrowse, setShowBrowse] = useState(false)
+  const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null)
   const [showEmoji, setShowEmoji] = useState(false)
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showRoomInfo, setShowRoomInfo] = useState(false)
@@ -154,7 +158,9 @@ export default function CommunityPage() {
   const roomMessages = useMemo(() => activeRoomId
     ? allMessages.filter((m) => m.roomId === activeRoomId).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     : [], [activeRoomId, allMessages])
-  const filteredRooms = rooms.filter((r) => !search || r.name.toLowerCase().includes(search.toLowerCase()))
+  const myRooms = rooms.filter((r) => myRoomIds.has(r.id))
+  const filteredRooms = myRooms.filter((r) => !search || r.name.toLowerCase().includes(search.toLowerCase()))
+  const browseRooms = rooms.filter((r) => !browseSearch || r.name.toLowerCase().includes(browseSearch.toLowerCase()))
   const selectedLangData = LANGUAGES.find((l) => l.code === selectedLang) ?? LANGUAGES[0]
 
   useEffect(() => { activeRoomRef.current = activeRoomId }, [activeRoomId])
@@ -194,7 +200,7 @@ export default function CommunityPage() {
     if (roomError) throw roomError
 
     const roomRows = (roomData ?? []) as RoomRow[]
-    if (roomRows.length === 0) { setRooms([]); setActiveRoomId(null); setAllMessages([]); return }
+    if (roomRows.length === 0) { setRooms([]); setMyRoomIds(new Set()); setActiveRoomId(null); setAllMessages([]); return }
 
     const { data: memberData } = await supabase
       .from('room_members').select('room_id,student_id').in('room_id', roomRows.map((r) => r.id))
@@ -205,14 +211,23 @@ export default function CommunityPage() {
       return acc
     }, {})
 
+    const joined = new Set(
+      (memberData ?? []).filter((item) => (item as MemberRow).student_id === userId).map((item) => (item as MemberRow).room_id)
+    )
+    setMyRoomIds(joined)
+
     const mappedRooms = roomRows.map((r) => mapRoom(r, counts[r.id] ?? 0))
     setRooms(mappedRooms)
 
-    const hasPrevious = preserveActive && activeRoomRef.current && mappedRooms.some((r) => r.id === activeRoomRef.current)
-    const nextId = hasPrevious ? activeRoomRef.current : mappedRooms[0].id
-    setActiveRoomId(nextId)
-    if (nextId) { await ensureMembership(nextId, userId); await fetchMessages(nextId) }
-  }, [ensureMembership, fetchMessages])
+    if (preserveActive && activeRoomRef.current && joined.has(activeRoomRef.current)) {
+      // Stay in current room
+      if (activeRoomRef.current) await fetchMessages(activeRoomRef.current)
+    } else {
+      const firstJoined = mappedRooms.find((r) => joined.has(r.id))
+      if (firstJoined) { setActiveRoomId(firstJoined.id); await fetchMessages(firstJoined.id) }
+      else setActiveRoomId(null)
+    }
+  }, [fetchMessages])
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -264,15 +279,15 @@ export default function CommunityPage() {
 
   // ── Switch room ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (chatMode !== 'realtime' || !activeRoomId || !authUserId) return
-    const roomId = activeRoomId; const userId = authUserId; let cancelled = false
-    async function joinLoad() {
-      try { await ensureMembership(roomId, userId); await fetchMessages(roomId) }
+    if (chatMode !== 'realtime' || !activeRoomId) return
+    let cancelled = false
+    async function load() {
+      try { await fetchMessages(activeRoomId!) }
       catch (err) { if (!cancelled) setChatError(getErrorMessage(err)) }
     }
-    joinLoad()
+    load()
     return () => { cancelled = true }
-  }, [activeRoomId, authUserId, chatMode, ensureMembership, fetchMessages])
+  }, [activeRoomId, chatMode, fetchMessages])
 
   // ── Send message ───────────────────────────────────────────────────────────
   async function sendMessage(
@@ -391,17 +406,33 @@ export default function CommunityPage() {
     } catch (err) { setChatError(getErrorMessage(err)) }
   }
 
+  async function joinRoom(roomId: string) {
+    if (!authUserId) return
+    setJoiningRoomId(roomId)
+    try {
+      await ensureMembership(roomId, authUserId)
+      setMyRoomIds((prev) => new Set([...prev, roomId]))
+      await fetchMessages(roomId)
+      setActiveRoomId(roomId)
+      setShowBrowse(false)
+      setBrowseSearch('')
+    } catch (err) { setChatError(getErrorMessage(err)) }
+    finally { setJoiningRoomId(null) }
+  }
+
   async function handleLeaveRoom() {
     if (!activeRoomId) return
     if (chatMode === 'demo' || !authUserId) {
-      const remaining = rooms.filter((r) => r.id !== activeRoomId)
-      setRooms(remaining); setAllMessages((prev) => prev.filter((m) => m.roomId !== activeRoomId))
-      setActiveRoomId(remaining[0]?.id ?? null); setShowRoomInfo(false); return
+      setMyRoomIds((prev) => { const next = new Set(prev); next.delete(activeRoomId); return next })
+      setActiveRoomId(null); setShowRoomInfo(false); return
     }
     try {
       const { error } = await supabase.from('room_members').delete().eq('room_id', activeRoomId).eq('student_id', authUserId)
       if (error) throw error
-      await refreshRooms(authUserId, false); setShowRoomInfo(false); setChatError(null)
+      setMyRoomIds((prev) => { const next = new Set(prev); next.delete(activeRoomId); return next })
+      const nextRoom = myRooms.find((r) => r.id !== activeRoomId)
+      setActiveRoomId(nextRoom?.id ?? null)
+      setShowRoomInfo(false); setChatError(null)
     } catch (err) { setChatError(getErrorMessage(err)) }
   }
 
@@ -450,7 +481,14 @@ export default function CommunityPage() {
           </div>
 
           <ScrollArea className="flex-1 px-2 py-2">
-            <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Rooms</p>
+            <div className="flex items-center justify-between px-2 pb-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">My Rooms</p>
+              <button onClick={() => setShowBrowse(true)}
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-emerald-600 hover:bg-emerald-50 transition-colors">
+                <Search className="h-3 w-3" />
+                Browse
+              </button>
+            </div>
             {filteredRooms.map((room) => {
               const Icon = roomTypeIcon[room.type] ?? MessageSquare
               const isActive = activeRoom?.id === room.id
@@ -475,7 +513,13 @@ export default function CommunityPage() {
               )
             })}
             {!loadingRooms && filteredRooms.length === 0 && (
-              <p className="px-3 py-4 text-center text-xs text-slate-400">No rooms found</p>
+              <div className="px-3 py-4 text-center">
+                <p className="text-xs text-slate-400">No rooms joined yet</p>
+                <button onClick={() => setShowBrowse(true)}
+                  className="mt-1.5 text-[11px] font-medium text-emerald-600 hover:underline">
+                  Browse all rooms →
+                </button>
+              </div>
             )}
           </ScrollArea>
 
@@ -529,7 +573,7 @@ export default function CommunityPage() {
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-900">{activeRoom.name}</p>
-                    <p className="text-xs text-slate-400">{activeRoom.memberCount} members · anyone on ScholarFlow can join</p>
+                    <p className="text-xs text-slate-400">{activeRoom.memberCount} members · {activeRoom.type}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -729,8 +773,18 @@ export default function CommunityPage() {
             <div className="flex h-full flex-1 items-center justify-center">
               <div className="text-center">
                 <MessageSquare className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-                <p className="text-sm font-medium text-slate-600">No rooms available</p>
-                <p className="text-xs text-slate-400">Create a new room to start chatting.</p>
+                <p className="text-sm font-medium text-slate-600">Join a room to start chatting</p>
+                <p className="text-xs text-slate-400 mb-4">Browse public rooms or create your own.</p>
+                <div className="flex gap-2 justify-center">
+                  <Button size="sm" variant="outline" onClick={() => setShowBrowse(true)}>
+                    <Search className="h-3.5 w-3.5 mr-1.5" />
+                    Browse Rooms
+                  </Button>
+                  <Button size="sm" variant="gradient" onClick={() => setShowCreateRoom(true)}>
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Create Room
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -780,6 +834,62 @@ export default function CommunityPage() {
                 Create Room
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Browse rooms dialog ───────────────────────────────────────────── */}
+      <Dialog open={showBrowse} onOpenChange={setShowBrowse}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Browse Rooms</DialogTitle></DialogHeader>
+          <div className="mt-2 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Input placeholder="Search by room name..." value={browseSearch}
+                onChange={(e) => setBrowseSearch(e.target.value)}
+                className="pl-8" autoFocus />
+            </div>
+            <ScrollArea className="h-72">
+              <div className="space-y-1.5 pr-2">
+                {browseRooms.map((room) => {
+                  const Icon = roomTypeIcon[room.type] ?? MessageSquare
+                  const isMember = myRoomIds.has(room.id)
+                  const isJoining = joiningRoomId === room.id
+                  return (
+                    <div key={room.id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                        style={{ backgroundColor: (room.color ?? '#6366f1') + '20' }}>
+                        <Icon className="h-4 w-4" style={{ color: room.color ?? '#6366f1' }} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-slate-800">{room.name}</p>
+                        {room.description && <p className="truncate text-[10px] text-slate-400">{room.description}</p>}
+                        <p className="text-[10px] text-slate-400">{room.memberCount} members</p>
+                      </div>
+                      {isMember ? (
+                        <Button size="sm" variant="outline" className="shrink-0 h-7 px-2.5 text-xs text-emerald-600 border-emerald-200"
+                          onClick={() => { setActiveRoomId(room.id); setShowBrowse(false); setBrowseSearch('') }}>
+                          <Check className="h-3 w-3 mr-1" />
+                          Open
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="gradient" className="shrink-0 h-7 px-2.5 text-xs"
+                          onClick={() => void joinRoom(room.id)} disabled={isJoining}>
+                          {isJoining ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Join'}
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+                {browseRooms.length === 0 && (
+                  <p className="py-6 text-center text-sm text-slate-400">No rooms match your search.</p>
+                )}
+              </div>
+            </ScrollArea>
+            <Button variant="outline" size="sm" className="w-full" onClick={() => { setShowBrowse(false); setShowCreateRoom(true) }}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Create a new room
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
