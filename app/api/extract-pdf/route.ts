@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
+async function extractPdfText(buffer: Uint8Array): Promise<{ text: string; pages: number }> {
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  // Disable worker — runs in the same thread, no native deps, works in Vercel
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+
+  const doc = await pdfjsLib.getDocument({ data: buffer, useWorkerFetch: false }).promise
+  const parts: string[] = []
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item) => ('str' in item ? (item as { str: string }).str : ''))
+      .join(' ')
+    parts.push(pageText)
+  }
+  return { text: parts.join('\n').replace(/\s+/g, ' ').trim(), pages: doc.numPages }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
@@ -15,13 +33,13 @@ export async function POST(req: NextRequest) {
     const isPdf = file.type === 'application/pdf' || extension === 'pdf'
     const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || extension === 'docx'
     const isText = file.type.startsWith('text/') || extension === 'txt' || extension === 'md'
+
     if (!isPdf && !isDocx && !isText) {
-      return NextResponse.json({ error: 'Supported files are PDF, DOCX, TXT, and Markdown.' }, { status: 400 })
+      return NextResponse.json({ error: 'Supported files: PDF, DOCX, TXT, Markdown.' }, { status: 400 })
     }
 
-    const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
-    if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: 'File must be under 10 MB' }, { status: 413 })
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File must be under 10 MB.' }, { status: 413 })
     }
 
     const arrayBuffer = await file.arrayBuffer()
@@ -31,26 +49,22 @@ export async function POST(req: NextRequest) {
     let pages: number | null = null
 
     if (isPdf) {
-      // Use the inner module path to avoid pdf-parse loading its test file at require() time,
-      // which throws in Next.js / serverless environments.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require('pdf-parse/lib/pdf-parse.js') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>
-      const result = await pdfParse(buffer)
-      text = result.text?.trim() ?? ''
-      pages = result.numpages
+      const result = await extractPdfText(new Uint8Array(buffer))
+      text = result.text
+      pages = result.pages
     } else if (isDocx) {
       const mammoth = await import('mammoth')
       const result = await mammoth.extractRawText({ buffer })
       text = result.value.trim()
     } else {
-      text = buffer.toString('utf8').replace(/^\uFEFF/, '').trim()
+      text = buffer.toString('utf8').replace(/^﻿/, '').trim()
     }
 
     if (!text || text.length < 50) {
       return NextResponse.json(
         { error: isPdf
-          ? 'This PDF contains little or no selectable text and may be scanned. Run OCR on it or use Paste Text.'
-          : 'Could not extract readable text from this file. Try the Paste Text option instead.' },
+            ? 'This PDF has no selectable text — it may be scanned. Try copying the text and using Paste Text instead.'
+            : 'Could not extract readable text. Try the Paste Text option.' },
         { status: 422 }
       )
     }
@@ -59,7 +73,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('PDF extraction error:', error)
     return NextResponse.json(
-      { error: 'Failed to read PDF. Try the Paste Text option instead.' },
+      { error: 'Failed to read this file. Try the Paste Text option instead.' },
       { status: 500 }
     )
   }
