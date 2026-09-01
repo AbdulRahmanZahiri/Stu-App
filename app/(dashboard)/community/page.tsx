@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageSquare, Send, Users, Hash, Plus, Search, Image as ImageIcon,
   Smile, Paperclip, MoreVertical, X, Check, FileText, Download,
-  Languages, Globe, Loader2, Crown, UserMinus, Trash2, ChevronRight,
+  Languages, Globe, Loader2, Crown, UserMinus, Trash2, Link, Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -145,9 +146,11 @@ export default function CommunityPage() {
   const [browseSearch, setBrowseSearch] = useState('')
   const [showBrowse, setShowBrowse] = useState(false)
   const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null)
+  const searchParams = useSearchParams()
   const [showMembers, setShowMembers] = useState(true)
   const [roomMembersList, setRoomMembersList] = useState<MemberInfo[]>([])
   const [typingUsers, setTypingUsers] = useState<string[]>([])
+  const [copied, setCopied] = useState(false)
   const [showEmoji, setShowEmoji] = useState(false)
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showRoomInfo, setShowRoomInfo] = useState(false)
@@ -187,6 +190,21 @@ export default function CommunityPage() {
 
   useEffect(() => { activeRoomRef.current = activeRoomId }, [activeRoomId])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [roomMessages, activeRoomId])
+
+  // ── Deep-link: ?join=<roomId> ─────────────────────────────────────────────
+  useEffect(() => {
+    const joinId = searchParams.get('join')
+    if (!joinId || rooms.length === 0) return
+    const target = rooms.find((r) => r.id === joinId)
+    if (!target) return
+    if (myRoomIds.has(joinId)) {
+      setActiveRoomId(joinId)
+    } else {
+      setBrowseSearch(target.name)
+      setShowBrowse(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, rooms.length])
 
   // ── Demo fallback ──────────────────────────────────────────────────────────
   const setDemoMode = useCallback((reason?: string) => {
@@ -545,6 +563,21 @@ export default function CommunityPage() {
     finally { setJoiningRoomId(null) }
   }
 
+  function handleShareRoom(roomId: string) {
+    const url = `${window.location.origin}/community?join=${roomId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    }).catch(() => {
+      // Fallback for browsers that block clipboard
+      const el = document.createElement('textarea')
+      el.value = url; document.body.appendChild(el); el.select()
+      document.execCommand('copy'); document.body.removeChild(el)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
+  }
+
   async function handleKickMember(memberId: string) {
     if (!activeRoomId || !authUserId) return
     if (activeRoom?.createdBy !== authUserId) return
@@ -734,6 +767,11 @@ export default function CommunityPage() {
                     </Badge>
                   )}
                   <Badge variant="secondary" className="text-[10px]">{activeRoom.courseCode ?? activeRoom.type}</Badge>
+                  <Button variant="ghost" size="icon-sm" title="Copy invite link"
+                    onClick={() => handleShareRoom(activeRoom.id)}
+                    className={copied ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'}>
+                    {copied ? <Check className="h-4 w-4" /> : <Link className="h-4 w-4" />}
+                  </Button>
                   <Button variant="ghost" size="icon-sm" title="Members" onClick={() => setShowMembers((v) => !v)}
                     className={showMembers ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'}>
                     <Users className="h-4 w-4" />
@@ -1172,6 +1210,15 @@ export default function CommunityPage() {
               <div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700">
                 <strong>Open room</strong> — any ScholarFlow user can join and see all messages.
               </div>
+              <button
+                onClick={() => handleShareRoom(activeRoom.id)}
+                className="flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100 transition-colors">
+                {copied ? <Check className="h-4 w-4 text-emerald-500 shrink-0" /> : <Copy className="h-4 w-4 text-slate-400 shrink-0" />}
+                <div className="text-left">
+                  <p className="font-medium text-xs">{copied ? 'Link copied!' : 'Copy invite link'}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{typeof window !== 'undefined' ? `${window.location.origin}/community?join=${activeRoom.id}` : ''}</p>
+                </div>
+              </button>
               {activeRoom.createdBy === authUserId && (
                 <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700 flex items-center gap-2">
                   <Crown className="h-3.5 w-3.5 text-amber-500" />
