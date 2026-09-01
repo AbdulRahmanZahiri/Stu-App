@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createRequire } from 'module'
 
 export const runtime = 'nodejs'
 
+// createRequire lets us call require() from an ESM module — needed because
+// Next.js compiles API routes as ESM but pdf-parse is CommonJS.
+const nodeRequire = createRequire(import.meta.url)
+
 async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
-  // Import from the lib path — skips the main entry's test-PDF init and canvas dependency.
-  // pdf-parse is in serverExternalPackages so it loads as a plain Node module (no bundling).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfParse = require('pdf-parse/lib/pdf-parse.js')
+  // Import from lib path — skips pdf-parse's main entry which tries to read
+  // a test PDF file and load canvas (both fail in Vercel's serverless env).
+  // pdf-parse is in serverExternalPackages so it's a real Node module at runtime.
+  const pdfParse = nodeRequire('pdf-parse/lib/pdf-parse.js') as (
+    buf: Buffer,
+    opts?: Record<string, unknown>
+  ) => Promise<{ text: string; numpages: number }>
+
   const result = await pdfParse(buffer, { max: 0 }) // max:0 = all pages
   return {
-    text: (result.text as string).replace(/\s+/g, ' ').trim(),
-    pages: result.numpages as number,
+    text: result.text.replace(/\s+/g, ' ').trim(),
+    pages: result.numpages,
   }
 }
 
@@ -25,11 +34,16 @@ export async function POST(req: NextRequest) {
 
     const extension = file.name.split('.').pop()?.toLowerCase()
     const isPdf = file.type === 'application/pdf' || extension === 'pdf'
-    const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || extension === 'docx'
+    const isDocx =
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      extension === 'docx'
     const isText = file.type.startsWith('text/') || extension === 'txt' || extension === 'md'
 
     if (!isPdf && !isDocx && !isText) {
-      return NextResponse.json({ error: 'Supported files: PDF, DOCX, TXT, Markdown.' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Supported files: PDF, DOCX, TXT, Markdown.' },
+        { status: 400 }
+      )
     }
 
     if (file.size > 10 * 1024 * 1024) {
