@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Flame, AlertTriangle, Sparkles, Upload, Check, Loader2,
@@ -42,6 +42,24 @@ export default function StudyPlannerPage() {
   const [schedule, setSchedule] = useState<ScheduleDay[]>([])
   const [scheduling, setScheduling] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
+  const [schedProgress, setSchedProgress] = useState(0)
+
+  const SCHED_STEPS = ['Analyzing your tasks…', 'Checking your calendar…', 'Building your plan…', 'Almost done…']
+  const [schedStep, setSchedStep] = useState(0)
+
+  useEffect(() => {
+    if (!scheduling) { setSchedProgress(0); setSchedStep(0); return }
+    const start = Date.now()
+    const TOTAL_MS = 18_000
+    const tick = setInterval(() => {
+      const elapsed = Date.now() - start
+      const pct = Math.min(90, (elapsed / TOTAL_MS) * 100)
+      setSchedProgress(pct)
+      setSchedStep(Math.min(SCHED_STEPS.length - 1, Math.floor((elapsed / TOTAL_MS) * SCHED_STEPS.length)))
+    }, 200)
+    return () => clearInterval(tick)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduling])
 
   // LMS import
   const [lmsTab, setLmsTab] = useState<LMSTab>('file')
@@ -264,9 +282,21 @@ export default function StudyPlannerPage() {
               )}
 
               {scheduling && (
-                <div className="py-10 text-center">
-                  <Loader2 className="mx-auto mb-3 h-8 w-8 text-emerald-400 animate-spin" />
-                  <p className="text-sm text-slate-500">Building your personalized study plan...</p>
+                <div className="py-8 px-4 text-center space-y-4">
+                  <Sparkles className="mx-auto h-8 w-8 text-emerald-400 animate-pulse" />
+                  <p className="text-sm font-medium text-slate-600">{SCHED_STEPS[schedStep]}</p>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] text-slate-400">
+                      <span>AI at work</span>
+                      <span>{Math.round(schedProgress)}%</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-300"
+                        style={{ width: `${schedProgress}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

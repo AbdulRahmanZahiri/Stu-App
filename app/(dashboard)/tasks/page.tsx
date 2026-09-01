@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore } from '@/lib/app-store'
+import { useAuth } from '@/lib/auth-context'
 import { formatRelativeDate, getPriorityColor, getDueDateStatus, getEffectiveTaskStatus, cn } from '@/lib/utils'
 import { isToday } from 'date-fns'
 import { useTaskNotifications } from '@/hooks/useTaskNotifications'
@@ -97,6 +98,7 @@ function TasksManager({
   initialCompose: boolean
 }) {
   const { tasks, courses, addTasks, updateTask, deleteTask: storeDeleteTask } = useAppStore()
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState(initialFilter)
   const [showAdd, setShowAdd] = useState(initialCompose)
@@ -185,7 +187,7 @@ function TasksManager({
     } else {
       const task: Task = {
         id: `task-${Date.now()}`,
-        studentId: 'demo',
+        studentId: user?.id ?? '',
         title: form.title.trim(),
         courseId: form.courseId || undefined,
         courseCode: course?.code,

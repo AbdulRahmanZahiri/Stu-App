@@ -9,7 +9,7 @@ function getClient(): Groq {
   return client
 }
 
-const MAX_TEXT_LENGTH = 120_000
+const MAX_TEXT_LENGTH = 15_000
 const MAX_FILENAME_LENGTH = 260
 
 type JsonObject = Record<string, unknown>
@@ -137,19 +137,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await getClient().chat.completions.create({
-      model: 'groq/compound',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0,
-      max_tokens: 4096,
+      max_tokens: 2500,
       response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
           content: [
-            'You are a university syllabus parser.',
-            'Extract only information explicitly present in the supplied syllabus.',
-            'Return one valid JSON object and no markdown.',
-            'Represent every specific assignment, quiz, exam, presentation, project, lab, or deadline in keyDates.',
-            'Convert dates to ISO 8601. When the syllabus gives a year, preserve it. When no year is stated, infer the most plausible year from the semester context; never invent a date from only a week number.',
+            'You are a university syllabus parser. Output only valid JSON.',
+            'Extract ALL due dates and deadlines from the syllabus — every assignment, quiz, exam, midterm, final, project, lab, presentation, report, reading, homework, and any other graded or required work.',
+            'Each item with a concrete date MUST appear as its own entry in keyDates. Do NOT summarize or combine items.',
+            'If a recurring item (e.g. weekly quizzes) has individual due dates listed, include every individual date.',
+            'Convert dates to ISO 8601. Preserve the year when given; infer the most plausible year from semester context when omitted. Never create an entry with only a week number or "TBD".',
             'Weights must be numeric percentages from 0 to 100.',
           ].join(' '),
         },
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
 File: ${fileName || 'syllabus'}
 Current date: ${new Date().toISOString().slice(0, 10)}
 
-Required JSON shape:
+Return a JSON object with this exact shape:
 {
   "instructor": "string or null",
   "courseTitle": "string or null",
@@ -183,9 +183,10 @@ SYLLABUS END`,
       ],
     })
 
-    const raw = response.choices[0]?.message?.content?.trim()
+    const raw = response.choices[0]?.message?.content?.trim() ?? ''
     if (!raw) throw new Error('The AI returned an empty response')
-    const parsed = normalizeResult(JSON.parse(raw))
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    const parsed = normalizeResult(JSON.parse(cleaned))
     return NextResponse.json({ data: parsed, parser: 'ai', warning: null })
   } catch (error) {
     console.error('Syllabus parse error:', error)

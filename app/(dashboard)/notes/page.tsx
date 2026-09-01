@@ -64,7 +64,7 @@ export default function NotesPage() {
     const note: Note = {
       id: crypto.randomUUID(),
       authorId: user?.id ?? 'student-001',
-      authorName: profile?.name ?? 'Demo Student',
+      authorName: profile?.name ?? 'Student',
       courseId: newNote.courseId || undefined,
       courseCode: course?.code,
       title: newNote.title.trim(),
@@ -101,7 +101,7 @@ export default function NotesPage() {
     const note: Note = {
       id: crypto.randomUUID(),
       authorId: user?.id ?? 'student-001',
-      authorName: profile?.name ?? 'Demo Student',
+      authorName: profile?.name ?? 'Student',
       courseId: newNote.courseId || undefined,
       courseCode: course?.code,
       title: newNote.title.trim(),

@@ -408,7 +408,12 @@ function SettingsContent() {
                   ))}
                 </div>
                 <div className="mt-4 rounded-xl bg-slate-50 p-4"><p className="mb-2 text-xs font-semibold text-slate-600">Reminder Lead Time</p><Select value={reminderLeadTime} onValueChange={setReminderLeadTime}><SelectTrigger className="h-8 rounded-lg text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1h">1 hour before</SelectItem><SelectItem value="3h">3 hours before</SelectItem><SelectItem value="24h">24 hours before</SelectItem><SelectItem value="48h">48 hours before</SelectItem></SelectContent></Select></div>
-                <div className="mt-4 flex items-center justify-between gap-3"><p className="text-xs text-slate-400">Preferences are saved now; email and push delivery require a notification worker.</p><SaveButton status={saveStatus.notifications} disabled={!user} onSave={() => void saveSection('notifications')} /></div>
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    Preferences are saved, but email &amp; push delivery are not yet active — notifications are in-app only for now.
+                  </div>
+                  <div className="flex justify-end"><SaveButton status={saveStatus.notifications} disabled={!user} onSave={() => void saveSection('notifications')} /></div>
+                </div>
               </CardContent>
             </Card>
           </motion.div>

@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useAppStore } from '@/lib/app-store'
+import { useAuth } from '@/lib/auth-context'
 import { cn } from '@/lib/utils'
 import type { CalendarEvent } from '@/lib/types'
 
@@ -33,6 +34,7 @@ const eventTypeConfig = {
 
 export default function CalendarPage() {
   const { calendarEvents, tasks, courses, addCalendarEvent, deleteCalendarEvent } = useAppStore()
+  const { user } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date())
   const [view, setView] = useState<'month' | 'week'>('month')
@@ -113,7 +115,7 @@ export default function CalendarPage() {
     const course = courses.find((item) => item.id === eventForm.courseId)
     addCalendarEvent({
       id: crypto.randomUUID(),
-      studentId: '',
+      studentId: user?.id ?? '',
       courseId: course?.id,
       courseCode: course?.code,
       title,

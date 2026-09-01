@@ -463,6 +463,11 @@ export async function deleteTaskRecord(taskId: string): Promise<void> {
   if (error) dataError('Could not delete task', error)
 }
 
+export async function deleteCourseRecord(courseId: string): Promise<void> {
+  const { error } = await supabase.from('courses').delete().eq('id', courseId)
+  if (error) dataError('Could not delete course', error)
+}
+
 export async function createCalendarEvent(event: CalendarEvent, userId: string): Promise<void> {
   const { error } = await supabase.from('calendar_events').insert({
     id: event.id,

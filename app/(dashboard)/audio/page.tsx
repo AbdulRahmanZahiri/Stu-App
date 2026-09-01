@@ -93,7 +93,25 @@ export default function AudioStudyPage() {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [genSuccess, setGenSuccess] = useState(false)
+  const [genProgress, setGenProgress] = useState(0)
+  const [genStep, setGenStep] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const GEN_STEPS = ['Reading your content…', 'Writing the script…', 'Polishing dialogue…', 'Almost ready…']
+
+  useEffect(() => {
+    if (!generating) { setGenProgress(0); setGenStep(0); return }
+    const start = Date.now()
+    const TOTAL_MS = 28_000
+    const tick = setInterval(() => {
+      const elapsed = Date.now() - start
+      const pct = Math.min(92, (elapsed / TOTAL_MS) * 100)
+      setGenProgress(pct)
+      setGenStep(Math.min(GEN_STEPS.length - 1, Math.floor((elapsed / TOTAL_MS) * GEN_STEPS.length)))
+    }, 200)
+    return () => clearInterval(tick)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generating])
   const transcriptRef = useRef<HTMLDivElement>(null)
 
   // Load voices (async on some browsers)
@@ -705,20 +723,35 @@ export default function AudioStudyPage() {
                 </div>
               )}
 
-              <Button
-                className="w-full gap-1.5 text-xs"
-                onClick={generate}
-                disabled={!canGenerate}
-              >
-                {generating
-                  ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating podcast...</>
-                  : <><Sparkles className="h-3.5 w-3.5" /> Generate Podcast Episode</>
-                }
-              </Button>
+              {generating ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500">
+                    <span>{GEN_STEPS[genStep]}</span>
+                    <span>{Math.round(genProgress)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-300"
+                      style={{ width: `${genProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-center text-[10px] text-slate-400">Usually takes 20–35 seconds</p>
+                </div>
+              ) : (
+                <Button
+                  className="w-full gap-1.5 text-xs"
+                  onClick={generate}
+                  disabled={!canGenerate}
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Generate Podcast Episode
+                </Button>
+              )}
 
-              <p className="mt-2 text-center text-[10px] text-slate-400">
-                Powered by Llama 3.3 via Groq · ~30 sec to generate
-              </p>
+              {!generating && (
+                <p className="mt-2 text-center text-[10px] text-slate-400">
+                  AI-powered · Free · ~30 sec to generate
+                </p>
+              )}
             </CardContent>
           </Card>
         </motion.div>

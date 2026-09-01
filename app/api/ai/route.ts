@@ -81,25 +81,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const response = await getClient().chat.completions.create({
-      model: 'groq/compound',
+    const stream = await getClient().chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
       max_tokens: 1024,
+      stream: true,
       messages: [{ role: 'system', content: `${SYSTEM_PROMPT}${courseContext}` }, ...messages],
     })
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      return NextResponse.json({ error: 'Empty response from AI' }, { status: 500 })
-    }
+    const encoder = new TextEncoder()
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of stream) {
+            const text = chunk.choices[0]?.delta?.content ?? ''
+            if (text) controller.enqueue(encoder.encode(text))
+          }
+        } finally {
+          controller.close()
+        }
+      },
+    })
 
-    return NextResponse.json({ content })
+    return new Response(readable, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
-    // Don't leak internal error details
     if (message.startsWith('Invalid') || message.startsWith('Empty') || message.startsWith('Too many')) {
       return NextResponse.json({ error: message }, { status: 400 })
     }
     console.error('AI route error:', error)
-    return NextResponse.json({ error: 'Failed to get AI response' }, { status: 500 })
+    const msg = message.includes('401') || message.includes('Authentication')
+      ? 'AI API key is invalid or missing.'
+      : message.includes('429') || message.includes('rate_limit')
+      ? 'Rate limit hit. Wait 30 seconds and try again.'
+      : 'Failed to get AI response'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

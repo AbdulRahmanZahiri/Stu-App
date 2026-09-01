@@ -4,7 +4,7 @@ import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   Upload, Plus, CheckCircle2,
-  Clock, ChevronRight, Check, Loader2, AlertCircle,
+  Clock, ChevronRight, Check, Loader2, AlertCircle, Trash2,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/lib/app-store'
+import { useAuth } from '@/lib/auth-context'
 import { toast } from 'sonner'
 import type { Course, Task } from '@/lib/types'
 
@@ -40,7 +41,8 @@ interface ParsedSyllabus {
 }
 
 export default function CoursesPage() {
-  const { courses, addCourse: storeAddCourse, saveSyllabusImport } = useAppStore()
+  const { courses, addCourse: storeAddCourse, deleteCourse, saveSyllabusImport } = useAppStore()
+  const { user, profile } = useAuth()
   const [uploadingCourse, setUploadingCourse] = useState<Course | null>(null)
   const [uploadState, setUploadState] = useState<UploadState>('idle')
   const [dragOver, setDragOver] = useState(false)
@@ -60,12 +62,12 @@ export default function CoursesPage() {
     if (!newCourse.code.trim() || !newCourse.name.trim()) return
     const course: Course = {
       id: crypto.randomUUID(),
-      studentId: 'student-001',
+      studentId: user?.id ?? '',
       code: newCourse.code.trim().toUpperCase(),
       name: newCourse.name.trim(),
       instructor: newCourse.instructor.trim() || undefined,
       credits: parseInt(newCourse.credits) || 3,
-      semester: 'Winter 2026',
+      semester: profile?.semester ?? new Date().getFullYear().toString(),
       year: 2026,
       color: newCourse.color,
       schedule: newCourse.schedule.trim() || undefined,
@@ -185,24 +187,29 @@ export default function CoursesPage() {
         const d = new Date(kd.date)
         return !isNaN(d.getTime())  // skip dates the AI made up like "Week 5" or "TBD"
       })
-      .map((kd) => ({
-        id: crypto.randomUUID(),
-        studentId: 'student-001',
-        courseId: uploadingCourse.id,
-        title: kd.title,
-        type: (kd.title.toLowerCase().includes('exam') || kd.title.toLowerCase().includes('midterm') || kd.title.toLowerCase().includes('final')
-          ? 'exam'
-          : kd.title.toLowerCase().includes('quiz')
-          ? 'quiz'
-          : 'assignment') as Task['type'],
-        status: 'not_started' as Task['status'],
-        priority: 'medium' as Task['priority'],
-        dueDate: new Date(kd.date),
-        courseCode: uploadingCourse.code,
-        courseColor: uploadingCourse.color,
-        courseName: uploadingCourse.name,
-        tags: ['syllabus-import'],
-      }))
+      .map((kd) => {
+        const t = kd.title.toLowerCase()
+        const isExam = t.includes('exam') || t.includes('midterm') || t.includes('final')
+        const isQuiz = t.includes('quiz') || t.includes('test')
+        const isLab = t.includes('lab')
+        const isProject = t.includes('project') || t.includes('presentation') || t.includes('report')
+        const type: Task['type'] = isExam ? 'exam' : isQuiz ? 'quiz' : isLab ? 'assignment' : isProject ? 'assignment' : 'assignment'
+        const priority: Task['priority'] = isExam ? 'high' : isProject ? 'high' : isQuiz ? 'medium' : 'medium'
+        return {
+          id: crypto.randomUUID(),
+          studentId: user?.id ?? '',
+          courseId: uploadingCourse.id,
+          title: kd.title,
+          type,
+          status: 'not_started' as Task['status'],
+          priority,
+          dueDate: new Date(kd.date),
+          courseCode: uploadingCourse.code,
+          courseColor: uploadingCourse.color,
+          courseName: uploadingCourse.name,
+          tags: ['syllabus-import'],
+        }
+      })
 
     setSaving(true)
     try {
@@ -253,6 +260,12 @@ export default function CoursesPage() {
               onUploadSyllabus={() => {
                 setUploadingCourse(course)
                 setUploadState('idle')
+              }}
+              onDelete={() => {
+                if (confirm(`Delete "${course.code} – ${course.name}"?\n\nThis will also remove all associated grades and tasks.`)) {
+                  deleteCourse(course.id)
+                  toast.success(`${course.code} removed`)
+                }
               }}
             />
           </motion.div>
@@ -481,13 +494,17 @@ export default function CoursesPage() {
                 {/* Key dates */}
                 {parsed.keyDates.length > 0 && (
                   <div className="rounded-xl border border-slate-100 p-4">
-                    <p className="text-xs font-semibold text-slate-500 mb-2">Key Dates</p>
-                    {parsed.keyDates.slice(0, 5).map((d, i) => (
-                      <div key={i} className="flex items-center justify-between py-1">
-                        <span className="text-sm text-slate-700">{d.title}</span>
-                        <span className="text-xs text-slate-400">{d.date}</span>
-                      </div>
-                    ))}
+                    <p className="text-xs font-semibold text-slate-500 mb-2">
+                      Key Dates &amp; Tasks ({parsed.keyDates.length})
+                    </p>
+                    <div className="max-h-48 overflow-y-auto space-y-0.5">
+                      {parsed.keyDates.map((d, i) => (
+                        <div key={i} className="flex items-center justify-between py-1 border-b border-slate-50 last:border-0">
+                          <span className="text-sm text-slate-700 flex-1 min-w-0 truncate pr-2">{d.title}</span>
+                          <span className="text-xs text-slate-400 shrink-0">{new Date(d.date).toLocaleDateString()}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -566,13 +583,13 @@ export default function CoursesPage() {
   )
 }
 
-function CourseCard({ course, onUploadSyllabus }: { course: Course; onUploadSyllabus: () => void }) {
+function CourseCard({ course, onUploadSyllabus, onDelete }: { course: Course; onUploadSyllabus: () => void; onDelete: () => void }) {
   return (
     <Card className="group overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5">
       <div className="h-1.5 w-full" style={{ backgroundColor: course.color }} />
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
-          <div>
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-sm font-extrabold" style={{ color: course.color }}>{course.code}</span>
               <Badge variant="secondary" className="text-[9px]">{course.credits} cr</Badge>
@@ -580,12 +597,21 @@ function CourseCard({ course, onUploadSyllabus }: { course: Course; onUploadSyll
             <h3 className="text-base font-semibold text-slate-900 leading-tight">{course.name}</h3>
             {course.instructor && <p className="mt-0.5 text-xs text-slate-400">{course.instructor}</p>}
           </div>
-          {course.currentGrade !== undefined && (
-            <div className="text-right">
-              <p className="text-xl font-extrabold" style={{ color: course.color }}>{course.currentGrade}%</p>
-              <p className="text-xs font-semibold text-slate-500">{course.letterGrade}</p>
-            </div>
-          )}
+          <div className="flex items-start gap-2 ml-2">
+            {course.currentGrade !== undefined && (
+              <div className="text-right">
+                <p className="text-xl font-extrabold" style={{ color: course.color }}>{course.currentGrade}%</p>
+                <p className="text-xs font-semibold text-slate-500">{course.letterGrade}</p>
+              </div>
+            )}
+            <button
+              onClick={onDelete}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500"
+              title="Delete course"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         {course.schedule && (

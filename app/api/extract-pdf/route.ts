@@ -31,8 +31,10 @@ export async function POST(req: NextRequest) {
     let pages: number | null = null
 
     if (isPdf) {
+      // Use the inner module path to avoid pdf-parse loading its test file at require() time,
+      // which throws in Next.js / serverless environments.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>
+      const pdfParse = require('pdf-parse/lib/pdf-parse.js') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>
       const result = await pdfParse(buffer)
       text = result.text?.trim() ?? ''
       pages = result.numpages

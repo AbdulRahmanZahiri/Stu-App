@@ -26,7 +26,7 @@ const quickPrompts = [
 const WELCOME: AIMessage = {
   id: 'welcome',
   role: 'assistant',
-  content: `Hi! I'm your AI academic assistant powered by Llama 3. I'm here to help you with COMP 2007, COMP 2003, MATH 2050, and ENGL 1110.\n\nI can summarize topics, generate practice questions, create flashcards, build study plans, and explain concepts simply.\n\nWhat would you like help with today?`,
+  content: `Hi! I'm your AI academic assistant. I'm here to help with your courses, assignments, and study sessions.\n\nI can summarize topics, generate practice questions, create flashcards, build study plans, and explain concepts simply.\n\nWhat would you like help with today?`,
   timestamp: new Date(),
 }
 
@@ -133,28 +133,36 @@ export default function AIAssistantPage() {
         body: JSON.stringify({ messages: history }),
       })
 
-      const data = await res.json()
-
       if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Failed to get response' }))
         throw new Error(data.error || 'Failed to get response')
       }
 
+      // Stream the response — add an empty AI message and fill it in
+      const aiMsgId = `msg-${crypto.randomUUID()}-ai`
       setMessages((prev) => [
         ...prev,
-        {
-          id: `msg-${crypto.randomUUID()}-ai`,
-          role: 'assistant' as const,
-          content: data.content,
-          timestamp: new Date(),
-        },
+        { id: aiMsgId, role: 'assistant' as const, content: '', timestamp: new Date() },
       ])
+      setLoading(false)
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let full = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        full += decoder.decode(value, { stream: true })
+        setMessages((prev) =>
+          prev.map((m) => (m.id === aiMsgId ? { ...m, content: full } : m))
+        )
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong'
       setError(msg === 'AI service not configured'
         ? 'Add your GROQ_API_KEY to .env.local to enable AI responses.'
         : msg
       )
-    } finally {
       setLoading(false)
     }
   }
@@ -175,7 +183,7 @@ export default function AIAssistantPage() {
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-900">AI Academic Assistant</h1>
-            <p className="text-xs text-slate-400">Powered by Llama 3.3 via Groq · Free</p>
+            <p className="text-xs text-slate-400">AI-powered · Fast streaming responses</p>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -323,7 +331,7 @@ export default function AIAssistantPage() {
             </Button>
           </div>
           <p className="mt-2 text-center text-[10px] text-slate-300">
-            Powered by Llama 3.3 via Groq · Free to use · Verify important info with your instructor
+            AI-powered · Always verify important info with your instructor
           </p>
         </div>
       </div>

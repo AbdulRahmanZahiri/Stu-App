@@ -20,6 +20,7 @@ import {
   Zap,
   X,
   CalendarRange,
+  BrainCircuit,
 } from 'lucide-react'
 import { cn, getEffectiveTaskStatus, getInitials } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -55,6 +56,7 @@ const baseNavItems: Array<{ group: string; items: NavItem[] }> = [
       { href: '/community', label: 'Community', icon: MessageSquare },
       { href: '/planner', label: 'Academic Planner', icon: GraduationCap },
       { href: '/audio', label: 'Audio Study', icon: Headphones },
+      { href: '/flashcards', label: 'Flashcards & Quiz', icon: BrainCircuit },
     ],
   },
 ]

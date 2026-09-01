@@ -69,7 +69,7 @@ const ROOM_COLORS = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef
 const DEFAULT_ROOMS: Array<Pick<RoomRow, 'name' | 'type' | 'description' | 'course_code' | 'university_name' | 'color'>> = [
   { name: 'General Student Lounge', type: 'general', description: 'Open room for all ScholarFlow students', course_code: null, university_name: 'Community', color: '#f59e0b' },
   { name: 'Study Tips & Tricks', type: 'general', description: 'Share your best study strategies', course_code: null, university_name: 'Community', color: '#10b981' },
-  { name: 'COMP 2007 Study Group', type: 'course', description: 'Data Structures & Algorithms', course_code: 'COMP 2007', university_name: 'Community', color: '#8b5cf6' },
+  { name: 'Exam Prep Room', type: 'general', description: 'Preparing for midterms and finals together', course_code: null, university_name: 'Community', color: '#8b5cf6' },
   { name: 'CS Major Chat', type: 'major', description: 'Computer Science students worldwide', course_code: null, university_name: 'Community', color: '#6366f1' },
 ]
 

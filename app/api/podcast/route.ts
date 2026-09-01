@@ -17,7 +17,7 @@ HOST_2 is Jordan: confident, funny, loves a good analogy. Drops knowledge casual
 
 Rules — follow them exactly:
 - EVERY single line must be: HOST_1: [dialogue text] OR HOST_2: [dialogue text] — absolutely nothing else
-- 22–30 exchanges (fast pace = 3–4 min spoken)
+- 14–20 exchanges (fast pace = 2–3 min spoken)
 - Short snappy lines — no single line longer than 3 sentences
 - Alternate speakers frequently, but let 2–3 lines go to one speaker when building momentum
 - Both hosts are genuinely excited — this is NOT a lecture, it's a conversation
@@ -58,14 +58,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Source text is too short to generate a podcast' }, { status: 400 })
   }
 
-  const MAX_SOURCE = 12_000
+  const MAX_SOURCE = 4_000
   const truncated = source.trim().slice(0, MAX_SOURCE)
   const episodeTitle = typeof title === 'string' && title.trim() ? title.trim() : 'Study Episode'
 
   try {
     const completion = await getClient().chat.completions.create({
-      model: 'groq/compound',
-      max_tokens: 3000,
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 1800,
       temperature: 0.75,
       messages: [
         { role: 'system', content: PODCAST_SYSTEM },

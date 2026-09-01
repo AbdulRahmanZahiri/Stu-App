@@ -14,7 +14,7 @@ export interface ParsedSyllabusData {
 }
 
 const MONTH_PATTERN = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
-const TASK_PATTERN = /\b(assignment|homework|quiz|exam|midterm|final|project|paper|essay|lab|presentation|test|assessment|portfolio|report|deadline)\b/i
+const TASK_PATTERN = /\b(assignment|homework|hw|quiz|exam|midterm|final|project|paper|essay|lab|presentation|test|assessment|portfolio|report|deadline|problem\s*set|ps\s*\d|discussion|reflection|submission|deliverable|milestone|case\s*study)\b/i
 const CATEGORY_PATTERN = '(assignments?|homework|quizzes?|exams?|midterms?|final(?: exam)?|projects?|papers?|essays?|labs?|presentations?|participation|attendance|discussions?|portfolio|reports?|tests?|assessments?)'
 
 function cleanLine(value: string): string {
@@ -125,7 +125,7 @@ function extractKeyDates(lines: string[], year: number): ParsedSyllabusData['key
     if (token && hasTaskContext && !/office\s+hours?/i.test(line)) {
       const parsedDate = parseDateToken(token, year)
       const title = cleanTaskTitle(line, token, previousLine)
-      if (parsedDate && title && TASK_PATTERN.test(title)) {
+      if (parsedDate && title && (TASK_PATTERN.test(title) || hasTaskContext)) {
         const key = `${title.toLowerCase()}|${parsedDate.toISOString().slice(0, 10)}`
         if (!seen.has(key)) {
           seen.add(key)

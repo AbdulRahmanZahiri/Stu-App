@@ -17,7 +17,7 @@ import { useAppStore } from '@/lib/app-store'
 import { cn, percentToLetter } from '@/lib/utils'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, ReferenceLine, LabelList,
 } from 'recharts'
 
 // ─── GPA helpers ────────────────────────────────────────────────────────────
@@ -533,8 +533,10 @@ function SemesterCalculator() {
 
   const chartData = rows.map((r) => ({
     name: r.course.code,
-    grade: r.pct ?? 0,
-    color: r.course.color,
+    grade: r.pct !== null ? parseFloat(r.pct.toFixed(1)) : 0,
+    letter: r.pct !== null ? percentToLetter(r.pct) : '—',
+    color: r.pct !== null ? r.course.color : '#e2e8f0',
+    hasGrade: r.pct !== null,
   }))
 
   return (
@@ -588,24 +590,48 @@ function SemesterCalculator() {
         ))}
       </div>
 
-      {/* Bar chart */}
+      {/* Grade chart */}
       {gradedRows.length > 0 && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Grade by Course</CardTitle>
+          <CardHeader className="pb-0 pt-4 px-5">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-slate-700">Grade by Course</CardTitle>
+              <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
+                {[{ label: 'A', v: 90, color: '#10b981' }, { label: 'B', v: 80, color: '#3b82f6' }, { label: 'C', v: 70, color: '#f59e0b' }].map(t => (
+                  <span key={t.label} className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-0.5" style={{ background: t.color }} />
+                    {t.label} ≥ {t.v}%
+                  </span>
+                ))}
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={chartData} barSize={36}>
+          <CardContent className="px-4 pb-5 pt-3">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartData} barSize={40} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `${v}%`} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} />
+                <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => `${v}%`} width={36} />
                 <Tooltip
-                  contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0' }}
-                  formatter={(v: number) => [`${v.toFixed(1)}%`, 'Grade']}
+                  cursor={{ fill: 'rgba(99,102,241,0.06)', radius: 6 }}
+                  contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', fontSize: 12 }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null
+                    const d = payload[0].payload as { name: string; grade: number; letter: string; color: string }
+                    return (
+                      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
+                        <p style={{ fontWeight: 700, fontSize: 13, color: d.color }}>{d.grade.toFixed(1)}%</p>
+                        <p style={{ fontSize: 11, color: '#64748b' }}>{d.name} · {d.letter}</p>
+                      </div>
+                    )
+                  }}
                 />
-                <Bar dataKey="grade" radius={[6, 6, 0, 0]}>
-                  {chartData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                <ReferenceLine y={90} stroke="#10b981" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'A', position: 'right', fontSize: 10, fill: '#10b981', fontWeight: 700 }} />
+                <ReferenceLine y={80} stroke="#3b82f6" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'B', position: 'right', fontSize: 10, fill: '#3b82f6', fontWeight: 700 }} />
+                <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: 'C', position: 'right', fontSize: 10, fill: '#f59e0b', fontWeight: 700 }} />
+                <Bar dataKey="grade" radius={[8, 8, 2, 2]}>
+                  {chartData.map((entry, i) => <Cell key={i} fill={entry.color} fillOpacity={entry.hasGrade ? 1 : 0.3} />)}
+                  <LabelList dataKey="letter" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#475569' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

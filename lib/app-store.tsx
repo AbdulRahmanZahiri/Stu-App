@@ -10,6 +10,7 @@ import {
   createCourse,
   createNote as createNoteRecord,
   createTasks,
+  deleteCourseRecord,
   deleteNoteRecord,
   deleteCalendarEventRecord,
   deleteTaskRecord,
@@ -99,6 +100,7 @@ interface AppStore {
   updateTask: (id: string, patch: Partial<Task>) => void
   deleteTask: (id: string) => void
   addCourse: (course: Course) => void
+  deleteCourse: (id: string) => void
   updateCourse: (id: string, patch: Partial<Course>) => void
   saveGrade: (input: GradeScoreInput) => Promise<void>
   addCalendarEvent: (event: CalendarEvent) => void
@@ -230,6 +232,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     setCourses((previous) => [...previous, course])
     if (user) void createCourse(course, user.id).catch(handlePersistenceError)
+  }, [handlePersistenceError, user])
+
+  const deleteCourse = useCallback((id: string) => {
+    setCourses((previous) => previous.filter((course) => course.id !== id))
+    if (user) void deleteCourseRecord(id).catch(handlePersistenceError)
   }, [handlePersistenceError, user])
 
   const updateCourse = useCallback((id: string, patch: Partial<Course>) => {
@@ -377,6 +384,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateTask,
       deleteTask,
       addCourse,
+      deleteCourse,
       updateCourse,
       saveGrade,
       addCalendarEvent,
