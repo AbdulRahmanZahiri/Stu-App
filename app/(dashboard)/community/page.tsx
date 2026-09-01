@@ -179,7 +179,10 @@ export default function CommunityPage() {
     : [], [activeRoomId, allMessages])
   const myRooms = rooms.filter((r) => myRoomIds.has(r.id))
   const filteredRooms = myRooms.filter((r) => !search || r.name.toLowerCase().includes(search.toLowerCase()))
-  const browseRooms = rooms.filter((r) => !browseSearch || r.name.toLowerCase().includes(browseSearch.toLowerCase()))
+  const browseQuery = browseSearch.trim().toLowerCase()
+  const browseRooms = browseQuery.length > 0
+    ? rooms.filter((r) => r.name.toLowerCase().includes(browseQuery) || (r.description ?? '').toLowerCase().includes(browseQuery))
+    : []
   const selectedLangData = LANGUAGES.find((l) => l.code === selectedLang) ?? LANGUAGES[0]
 
   useEffect(() => { activeRoomRef.current = activeRoomId }, [activeRoomId])
@@ -197,10 +200,17 @@ export default function CommunityPage() {
 
   // ── DB helpers ─────────────────────────────────────────────────────────────
   const ensureMembership = useCallback(async (roomId: string, userId: string, name?: string, role = 'member') => {
-    await supabase.from('room_members').upsert(
+    const { error } = await supabase.from('room_members').upsert(
       { room_id: roomId, student_id: userId, member_name: name ?? null, role },
       { onConflict: 'room_id,student_id', ignoreDuplicates: true }
     )
+    if (error) {
+      // Fallback: insert without new columns (pre-migration)
+      await supabase.from('room_members').upsert(
+        { room_id: roomId, student_id: userId },
+        { onConflict: 'room_id,student_id', ignoreDuplicates: true }
+      )
+    }
   }, [])
 
   const fetchRoomMembers = useCallback(async (roomId: string) => {
@@ -235,26 +245,35 @@ export default function CommunityPage() {
     const roomRows = (roomData ?? []) as RoomRow[]
     if (roomRows.length === 0) { setRooms([]); setMyRoomIds(new Set()); setActiveRoomId(null); setAllMessages([]); return }
 
-    const { data: memberData } = await supabase
-      .from('room_members').select('room_id,student_id,role,member_name').in('room_id', roomRows.map((r) => r.id))
+    // Use simple select (no new columns) so this works even before the roles migration is applied
+    const { data: memberData, error: memberError } = await supabase
+      .from('room_members').select('room_id,student_id').in('room_id', roomRows.map((r) => r.id))
+
+    // If the query failed for any reason, preserve existing myRoomIds rather than wiping them
+    if (memberError) {
+      const mappedRooms = roomRows.map((r) => mapRoom(r, 0))
+      setRooms(mappedRooms)
+      return
+    }
 
     const counts = (memberData ?? []).reduce<Record<string, number>>((acc, item) => {
-      const row = item as MemberRow
+      const row = item as { room_id: string; student_id: string }
       acc[row.room_id] = (acc[row.room_id] ?? 0) + 1
       return acc
     }, {})
 
-    const joined = new Set(
-      (memberData ?? []).filter((item) => (item as MemberRow).student_id === userId).map((item) => (item as MemberRow).room_id)
-    )
+    const joinedIds = (memberData ?? [])
+      .filter((item) => (item as { room_id: string; student_id: string }).student_id === userId)
+      .map((item) => (item as { room_id: string; student_id: string }).room_id)
+
+    const joined = new Set(joinedIds)
     setMyRoomIds(joined)
 
     const mappedRooms = roomRows.map((r) => mapRoom(r, counts[r.id] ?? 0))
     setRooms(mappedRooms)
 
     if (preserveActive && activeRoomRef.current && joined.has(activeRoomRef.current)) {
-      // Stay in current room
-      if (activeRoomRef.current) await fetchMessages(activeRoomRef.current)
+      await fetchMessages(activeRoomRef.current)
     } else {
       const firstJoined = mappedRooms.find((r) => joined.has(r.id))
       if (firstJoined) { setActiveRoomId(firstJoined.id); await fetchMessages(firstJoined.id) }
@@ -480,7 +499,12 @@ export default function CommunityPage() {
         .insert({ name: newRoom.name.trim(), type: newRoom.type, description: newRoom.description.trim() || null, color: newRoom.color, university_name: 'Community', created_by: authUserId })
         .select('id,name,type,description,course_code,university_name,color,created_at,created_by').single()
       if (error || !data) throw error ?? new Error('Failed to create room.')
-      await supabase.from('room_members').insert({ room_id: data.id, student_id: authUserId, member_name: currentUser.name, role: 'owner' })
+      // Try with role column (migration applied); fall back to bare insert
+      const { error: memErr } = await supabase.from('room_members')
+        .insert({ room_id: data.id, student_id: authUserId, member_name: currentUser.name, role: 'owner' })
+      if (memErr) {
+        await supabase.from('room_members').insert({ room_id: data.id, student_id: authUserId })
+      }
       await refreshRooms(authUserId, true)
       setActiveRoomId(data.id)
       setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1' }); setShowCreateRoom(false); setChatError(null)
@@ -1078,8 +1102,15 @@ export default function CommunityPage() {
                     </div>
                   )
                 })}
-                {browseRooms.length === 0 && (
-                  <p className="py-6 text-center text-sm text-slate-400">No rooms match your search.</p>
+                {browseQuery.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Search className="mb-2 h-8 w-8 text-slate-200" />
+                    <p className="text-sm font-medium text-slate-500">Search for a room</p>
+                    <p className="text-xs text-slate-400">Type a room name or topic above to find public rooms</p>
+                  </div>
+                )}
+                {browseQuery.length > 0 && browseRooms.length === 0 && (
+                  <p className="py-6 text-center text-sm text-slate-400">No rooms found for &quot;{browseSearch}&quot;</p>
                 )}
               </div>
             </ScrollArea>
