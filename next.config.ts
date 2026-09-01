@@ -24,7 +24,7 @@ const securityHeaders = [
       // In dev allow localhost; in prod lock to origins only
       isDev
         ? "connect-src 'self' http://localhost:* ws://localhost:* https://*.supabase.co wss://*.supabase.co https://api.groq.com"
-        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.groq.com",
+        : "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.groq.com https://api.mymemory.translated.net",
       "object-src 'none'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
@@ -35,7 +35,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: projectRoot,
-  serverExternalPackages: ['pdf-parse', '@napi-rs/canvas'],
+  serverExternalPackages: ['pdf-parse', 'pdfjs-dist', '@napi-rs/canvas'],
   turbopack: {
     root: projectRoot,
   },

@@ -378,6 +378,23 @@ export default function CommunityPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoomId, chatMode, authUserId])
 
+  // ── System messages (join/leave) ─────────────────────────────────────────
+  async function sendSystemMessage(roomId: string, content: string) {
+    if (chatMode === 'demo') {
+      const m: ChatMessage = {
+        id: `sys-${crypto.randomUUID()}`, roomId, senderId: 'system',
+        senderName: 'System', content, type: 'system' as ChatMessage['type'],
+        createdAt: new Date(),
+      }
+      setAllMessages((prev) => [...prev, m])
+      return
+    }
+    await supabase.from('chat_messages').insert({
+      room_id: roomId, sender_id: null, sender_name: 'System',
+      content, type: 'system',
+    })
+  }
+
   // ── Typing indicator ──────────────────────────────────────────────────────
   function handleInputChange(value: string) {
     setInput(value)
@@ -505,6 +522,7 @@ export default function CommunityPage() {
       if (memErr) {
         await supabase.from('room_members').insert({ room_id: data.id, student_id: authUserId })
       }
+      await sendSystemMessage(data.id, `${currentUser.name} created this room`)
       await refreshRooms(authUserId, true)
       setActiveRoomId(data.id)
       setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1' }); setShowCreateRoom(false); setChatError(null)
@@ -517,6 +535,7 @@ export default function CommunityPage() {
     try {
       await ensureMembership(roomId, authUserId, currentUser.name, 'member')
       setMyRoomIds((prev) => new Set([...prev, roomId]))
+      await sendSystemMessage(roomId, `${currentUser.name} joined the room`)
       await fetchMessages(roomId)
       await fetchRoomMembers(roomId)
       setActiveRoomId(roomId)
@@ -557,6 +576,7 @@ export default function CommunityPage() {
       setActiveRoomId(null); setShowRoomInfo(false); return
     }
     try {
+      await sendSystemMessage(activeRoomId, `${currentUser.name} left the room`)
       const { error } = await supabase.from('room_members').delete().eq('room_id', activeRoomId).eq('student_id', authUserId)
       if (error) throw error
       setMyRoomIds((prev) => { const next = new Set(prev); next.delete(activeRoomId); return next })
@@ -737,9 +757,10 @@ export default function CommunityPage() {
                   <div className="space-y-1">
                     {roomMessages.map((msg, i) => {
                       const isMe = msg.senderId === currentUser.id
+                      const isSystem = msg.type === 'system'
                       const prevMsg = roomMessages[i - 1]
                       const showDateSeparator = i === 0 || !isSameDay(new Date(msg.createdAt), new Date(roomMessages[i - 1].createdAt))
-                      const showAvatar = !isMe && (!prevMsg || prevMsg.senderId !== msg.senderId || showDateSeparator)
+                      const showAvatar = !isMe && !isSystem && (!prevMsg || prevMsg.senderId !== msg.senderId || showDateSeparator)
                       const showName = showAvatar
                       const isImage = msg.type === 'image'
                       const isFile = msg.type === 'file'
@@ -757,6 +778,15 @@ export default function CommunityPage() {
                             <div className="flex-1 h-px bg-slate-200" />
                           </div>
                         )}
+                        {isSystem ? (
+                          <motion.div key={`sys-${msg.id}`}
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                            className="flex items-center gap-3 py-1 my-1">
+                            <div className="flex-1 h-px bg-slate-100" />
+                            <span className="text-[11px] text-slate-400 px-2 whitespace-nowrap">{msg.content}</span>
+                            <div className="flex-1 h-px bg-slate-100" />
+                          </motion.div>
+                        ) : (
                         <motion.div
                           initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: Math.min(i * 0.02, 0.2) }}
@@ -847,6 +877,7 @@ export default function CommunityPage() {
                             </p>
                           </div>
                         </motion.div>
+                        )}
                         </div>
                       )
                     })}

@@ -2,22 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-async function extractPdfText(buffer: Uint8Array): Promise<{ text: string; pages: number }> {
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  // Disable worker — runs in the same thread, no native deps, works in Vercel
-  pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-
-  const doc = await pdfjsLib.getDocument({ data: buffer, useWorkerFetch: false }).promise
-  const parts: string[] = []
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item) => ('str' in item ? (item as { str: string }).str : ''))
-      .join(' ')
-    parts.push(pageText)
+async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
+  // Import from the lib path — skips the main entry's test-PDF init and canvas dependency.
+  // pdf-parse is in serverExternalPackages so it loads as a plain Node module (no bundling).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfParse = require('pdf-parse/lib/pdf-parse.js')
+  const result = await pdfParse(buffer, { max: 0 }) // max:0 = all pages
+  return {
+    text: (result.text as string).replace(/\s+/g, ' ').trim(),
+    pages: result.numpages as number,
   }
-  return { text: parts.join('\n').replace(/\s+/g, ' ').trim(), pages: doc.numPages }
 }
 
 export async function POST(req: NextRequest) {
@@ -49,7 +43,7 @@ export async function POST(req: NextRequest) {
     let pages: number | null = null
 
     if (isPdf) {
-      const result = await extractPdfText(new Uint8Array(buffer))
+      const result = await extractPdfText(buffer)
       text = result.text
       pages = result.pages
     } else if (isDocx) {
@@ -62,9 +56,11 @@ export async function POST(req: NextRequest) {
 
     if (!text || text.length < 50) {
       return NextResponse.json(
-        { error: isPdf
+        {
+          error: isPdf
             ? 'This PDF has no selectable text — it may be scanned. Try copying the text and using Paste Text instead.'
-            : 'Could not extract readable text. Try the Paste Text option.' },
+            : 'Could not extract readable text. Try the Paste Text option.',
+        },
         { status: 422 }
       )
     }
