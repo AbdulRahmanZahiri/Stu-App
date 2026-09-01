@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -136,7 +136,7 @@ async function translateText(text: string, targetLang: string): Promise<string> 
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function CommunityPage() {
+function CommunityPageInner() {
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [myRoomIds, setMyRoomIds] = useState<Set<string>>(new Set())
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
@@ -1243,5 +1243,13 @@ export default function CommunityPage() {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+export default function CommunityPage() {
+  return (
+    <Suspense fallback={null}>
+      <CommunityPageInner />
+    </Suspense>
   )
 }
