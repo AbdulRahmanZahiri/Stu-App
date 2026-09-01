@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageSquare, Send, Users, Hash, Plus, Search, Image as ImageIcon,
   Smile, Paperclip, MoreVertical, X, Check, FileText, Download,
-  Languages, Globe, Loader2,
+  Languages, Globe, Loader2, Crown, UserMinus, Trash2, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,8 +29,10 @@ type RoomRow = {
   id: string; name: string; type: ChatRoom['type']
   description: string | null; course_code: string | null
   university_name: string | null; color: string | null; created_at: string
+  created_by: string | null
 }
-type MemberRow = { room_id: string; student_id: string }
+type MemberRow = { room_id: string; student_id: string; member_name: string | null; role: string }
+type MemberInfo = { id: string; name: string; role: 'owner' | 'member'; isOnline: boolean }
 type MessageRow = {
   id: string; room_id: string; sender_id: string | null; sender_name: string
   content: string; type: ChatMessage['type']
@@ -84,7 +86,19 @@ function mapRoom(row: RoomRow, memberCount: number): ChatRoom {
     memberCount, unreadCount: 0,
     color: row.color ?? '#6366f1',
     createdAt: new Date(row.created_at),
+    createdBy: row.created_by ?? undefined,
   }
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+function formatDateSep(d: Date) {
+  const today = new Date(); const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
+  if (isSameDay(d, today)) return 'Today'
+  if (isSameDay(d, yesterday)) return 'Yesterday'
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 function mapMessage(row: MessageRow): ChatMessage {
@@ -131,6 +145,9 @@ export default function CommunityPage() {
   const [browseSearch, setBrowseSearch] = useState('')
   const [showBrowse, setShowBrowse] = useState(false)
   const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null)
+  const [showMembers, setShowMembers] = useState(true)
+  const [roomMembersList, setRoomMembersList] = useState<MemberInfo[]>([])
+  const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [showEmoji, setShowEmoji] = useState(false)
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showRoomInfo, setShowRoomInfo] = useState(false)
@@ -151,6 +168,8 @@ export default function CommunityPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeRoomRef = useRef<string | null>(null)
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [newRoom, setNewRoom] = useState({ name: '', type: 'general' as ChatRoom['type'], description: '', color: '#6366f1' })
 
@@ -177,8 +196,22 @@ export default function CommunityPage() {
   }, [])
 
   // ── DB helpers ─────────────────────────────────────────────────────────────
-  const ensureMembership = useCallback(async (roomId: string, userId: string) => {
-    await supabase.from('room_members').upsert({ room_id: roomId, student_id: userId }, { onConflict: 'room_id,student_id' })
+  const ensureMembership = useCallback(async (roomId: string, userId: string, name?: string, role = 'member') => {
+    await supabase.from('room_members').upsert(
+      { room_id: roomId, student_id: userId, member_name: name ?? null, role },
+      { onConflict: 'room_id,student_id', ignoreDuplicates: true }
+    )
+  }, [])
+
+  const fetchRoomMembers = useCallback(async (roomId: string) => {
+    const { data } = await supabase
+      .from('room_members').select('student_id,role,member_name').eq('room_id', roomId)
+    setRoomMembersList(
+      (data ?? []).map((m) => {
+        const row = m as MemberRow
+        return { id: row.student_id, name: row.member_name ?? 'Member', role: (row.role ?? 'member') as 'owner' | 'member', isOnline: false }
+      })
+    )
   }, [])
 
   const fetchMessages = useCallback(async (roomId: string) => {
@@ -195,7 +228,7 @@ export default function CommunityPage() {
   const refreshRooms = useCallback(async (userId: string, preserveActive = true) => {
     const { data: roomData, error: roomError } = await supabase
       .from('chat_rooms')
-      .select('id,name,type,description,course_code,university_name,color,created_at')
+      .select('id,name,type,description,course_code,university_name,color,created_at,created_by')
       .order('created_at', { ascending: true })
     if (roomError) throw roomError
 
@@ -203,7 +236,7 @@ export default function CommunityPage() {
     if (roomRows.length === 0) { setRooms([]); setMyRoomIds(new Set()); setActiveRoomId(null); setAllMessages([]); return }
 
     const { data: memberData } = await supabase
-      .from('room_members').select('room_id,student_id').in('room_id', roomRows.map((r) => r.id))
+      .from('room_members').select('room_id,student_id,role,member_name').in('room_id', roomRows.map((r) => r.id))
 
     const counts = (memberData ?? []).reduce<Record<string, number>>((acc, item) => {
       const row = item as MemberRow
@@ -245,6 +278,10 @@ export default function CommunityPage() {
           if (seedError) throw seedError
         }
         await refreshRooms(authUserId!)
+        // Back-fill member_name for existing null rows belonging to this user
+        void supabase.from('room_members')
+          .update({ member_name: profile?.name?.trim() || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Student' })
+          .eq('student_id', authUserId!).is('member_name', null)
         if (!cancelled) { setChatMode('realtime'); setChatError(null); setLoadingRooms(false) }
       } catch (err) {
         if (!cancelled) setDemoMode(getErrorMessage(err))
@@ -282,12 +319,56 @@ export default function CommunityPage() {
     if (chatMode !== 'realtime' || !activeRoomId) return
     let cancelled = false
     async function load() {
-      try { await fetchMessages(activeRoomId!) }
+      try {
+        await fetchMessages(activeRoomId!)
+        await fetchRoomMembers(activeRoomId!)
+      }
       catch (err) { if (!cancelled) setChatError(getErrorMessage(err)) }
     }
     load()
     return () => { cancelled = true }
-  }, [activeRoomId, chatMode, fetchMessages])
+  }, [activeRoomId, chatMode, fetchMessages, fetchRoomMembers])
+
+  // ── Presence / typing indicators ───────────────────────────────────────────
+  useEffect(() => {
+    if (chatMode !== 'realtime' || !activeRoomId || !authUserId) return
+    if (presenceChannelRef.current) void supabase.removeChannel(presenceChannelRef.current)
+
+    const ch = supabase.channel(`presence-${activeRoomId}`, { config: { presence: { key: authUserId } } })
+    ch.on('presence', { event: 'sync' }, () => {
+      const state = ch.presenceState<{ typing: boolean; name: string }>()
+      const typers = Object.values(state).flat()
+        .filter((p) => p.typing && (p as { typing: boolean; name: string } & { presence_ref?: string }).presence_ref !== authUserId)
+        .map((p) => p.name)
+        .filter(Boolean)
+      setTypingUsers(typers)
+      // Mark online members
+      const onlineIds = new Set(Object.keys(state))
+      setRoomMembersList((prev) => prev.map((m) => ({ ...m, isOnline: onlineIds.has(m.id) })))
+    })
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') void ch.track({ typing: false, name: currentUser.name })
+    })
+    presenceChannelRef.current = ch
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+      void supabase.removeChannel(ch)
+      presenceChannelRef.current = null
+      setTypingUsers([])
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoomId, chatMode, authUserId])
+
+  // ── Typing indicator ──────────────────────────────────────────────────────
+  function handleInputChange(value: string) {
+    setInput(value)
+    if (chatMode !== 'realtime' || !presenceChannelRef.current) return
+    void presenceChannelRef.current.track({ typing: true, name: currentUser.name })
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+    typingTimeoutRef.current = setTimeout(() => {
+      void presenceChannelRef.current?.track({ typing: false, name: currentUser.name })
+    }, 2500)
+  }
 
   // ── Send message ───────────────────────────────────────────────────────────
   async function sendMessage(
@@ -396,10 +477,10 @@ export default function CommunityPage() {
     }
     try {
       const { data, error } = await supabase.from('chat_rooms')
-        .insert({ name: newRoom.name.trim(), type: newRoom.type, description: newRoom.description.trim() || null, color: newRoom.color, university_name: 'Community' })
-        .select('id,name,type,description,course_code,university_name,color,created_at').single()
+        .insert({ name: newRoom.name.trim(), type: newRoom.type, description: newRoom.description.trim() || null, color: newRoom.color, university_name: 'Community', created_by: authUserId })
+        .select('id,name,type,description,course_code,university_name,color,created_at,created_by').single()
       if (error || !data) throw error ?? new Error('Failed to create room.')
-      await ensureMembership(data.id, authUserId)
+      await supabase.from('room_members').insert({ room_id: data.id, student_id: authUserId, member_name: currentUser.name, role: 'owner' })
       await refreshRooms(authUserId, true)
       setActiveRoomId(data.id)
       setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1' }); setShowCreateRoom(false); setChatError(null)
@@ -410,14 +491,39 @@ export default function CommunityPage() {
     if (!authUserId) return
     setJoiningRoomId(roomId)
     try {
-      await ensureMembership(roomId, authUserId)
+      await ensureMembership(roomId, authUserId, currentUser.name, 'member')
       setMyRoomIds((prev) => new Set([...prev, roomId]))
       await fetchMessages(roomId)
+      await fetchRoomMembers(roomId)
       setActiveRoomId(roomId)
       setShowBrowse(false)
       setBrowseSearch('')
     } catch (err) { setChatError(getErrorMessage(err)) }
     finally { setJoiningRoomId(null) }
+  }
+
+  async function handleKickMember(memberId: string) {
+    if (!activeRoomId || !authUserId) return
+    if (activeRoom?.createdBy !== authUserId) return
+    try {
+      const { error } = await supabase.from('room_members').delete()
+        .eq('room_id', activeRoomId).eq('student_id', memberId)
+      if (error) throw error
+      setRoomMembersList((prev) => prev.filter((m) => m.id !== memberId))
+      void refreshRooms(authUserId, true)
+    } catch (err) { setChatError(getErrorMessage(err)) }
+  }
+
+  async function handleDeleteRoom() {
+    if (!activeRoomId || !authUserId) return
+    if (activeRoom?.createdBy !== authUserId) return
+    try {
+      const { error } = await supabase.from('chat_rooms').delete().eq('id', activeRoomId)
+      if (error) throw error
+      setMyRoomIds((prev) => { const next = new Set(prev); next.delete(activeRoomId); return next })
+      setShowRoomInfo(false)
+      await refreshRooms(authUserId, false)
+    } catch (err) { setChatError(getErrorMessage(err)) }
   }
 
   async function handleLeaveRoom() {
@@ -561,7 +667,7 @@ export default function CommunityPage() {
         </div>
 
         {/* ── Right panel: chat area ─────────────────────────────────────────── */}
-        <div className="flex flex-1 flex-col bg-slate-50">
+        <div className="flex flex-1 min-w-0 flex-col bg-slate-50">
           {activeRoom ? (
             <>
               {/* Header */}
@@ -584,13 +690,18 @@ export default function CommunityPage() {
                     </Badge>
                   )}
                   <Badge variant="secondary" className="text-[10px]">{activeRoom.courseCode ?? activeRoom.type}</Badge>
+                  <Button variant="ghost" size="icon-sm" title="Members" onClick={() => setShowMembers((v) => !v)}
+                    className={showMembers ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'}>
+                    <Users className="h-4 w-4" />
+                  </Button>
                   <Button variant="ghost" size="icon-sm" onClick={() => setShowRoomInfo(true)}>
                     <MoreVertical className="h-4 w-4 text-slate-400" />
                   </Button>
                 </div>
               </div>
 
-              {/* Messages */}
+              {/* Messages + Members panel */}
+              <div className="flex flex-1 min-h-0 overflow-hidden">
               <ScrollArea className="flex-1 px-4 py-4 md:px-6">
                 {roomMessages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -603,7 +714,8 @@ export default function CommunityPage() {
                     {roomMessages.map((msg, i) => {
                       const isMe = msg.senderId === currentUser.id
                       const prevMsg = roomMessages[i - 1]
-                      const showAvatar = !isMe && (!prevMsg || prevMsg.senderId !== msg.senderId)
+                      const showDateSeparator = i === 0 || !isSameDay(new Date(msg.createdAt), new Date(roomMessages[i - 1].createdAt))
+                      const showAvatar = !isMe && (!prevMsg || prevMsg.senderId !== msg.senderId || showDateSeparator)
                       const showName = showAvatar
                       const isImage = msg.type === 'image'
                       const isFile = msg.type === 'file'
@@ -611,7 +723,17 @@ export default function CommunityPage() {
                       const isTranslating = !!translating[msg.id]
 
                       return (
-                        <motion.div key={msg.id}
+                        <div key={msg.id}>
+                        {showDateSeparator && (
+                          <div className="flex items-center gap-3 my-4">
+                            <div className="flex-1 h-px bg-slate-200" />
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-2">
+                              {formatDateSep(new Date(msg.createdAt))}
+                            </span>
+                            <div className="flex-1 h-px bg-slate-200" />
+                          </div>
+                        )}
+                        <motion.div
                           initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: Math.min(i * 0.02, 0.2) }}
                           className={cn('flex items-end gap-2 pt-1', isMe && 'flex-row-reverse')}>
@@ -701,12 +823,76 @@ export default function CommunityPage() {
                             </p>
                           </div>
                         </motion.div>
+                        </div>
                       )
                     })}
                     <div ref={bottomRef} />
                   </div>
                 )}
               </ScrollArea>
+
+              {/* Members panel */}
+              {showMembers && (
+                <div className="hidden md:flex w-56 shrink-0 flex-col border-l border-slate-100 bg-white overflow-y-auto">
+                  <div className="px-3 pt-4 pb-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Members — {roomMembersList.length}
+                    </p>
+                  </div>
+                  {/* Owners */}
+                  {roomMembersList.filter((m) => m.role === 'owner').length > 0 && (
+                    <>
+                      <p className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-amber-500">Owner</p>
+                      {roomMembersList.filter((m) => m.role === 'owner').map((m) => (
+                        <div key={m.id} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50">
+                          <div className="relative shrink-0">
+                            <Avatar className="h-7 w-7">
+                              <AvatarFallback className="bg-gradient-to-br from-amber-400 to-orange-400 text-[9px] text-white">
+                                {getInitials(m.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className={cn('absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white', m.isOnline ? 'bg-emerald-400' : 'bg-slate-300')} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[11px] font-semibold text-slate-700">{m.name}</p>
+                          </div>
+                          <Crown className="h-3 w-3 text-amber-400 shrink-0" />
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {/* Members */}
+                  {roomMembersList.filter((m) => m.role !== 'owner').length > 0 && (
+                    <>
+                      <p className="px-3 py-1 mt-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Members</p>
+                      {roomMembersList.filter((m) => m.role !== 'owner').map((m) => (
+                        <div key={m.id} className="group flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50">
+                          <div className="relative shrink-0">
+                            <Avatar className="h-7 w-7">
+                              <AvatarFallback className="bg-gradient-to-br from-slate-400 to-slate-500 text-[9px] text-white">
+                                {getInitials(m.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className={cn('absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white', m.isOnline ? 'bg-emerald-400' : 'bg-slate-300')} />
+                          </div>
+                          <p className="min-w-0 flex-1 truncate text-[11px] text-slate-600">{m.name}</p>
+                          {activeRoom.createdBy === authUserId && m.id !== authUserId && (
+                            <button onClick={() => void handleKickMember(m.id)}
+                              title="Remove from room"
+                              className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-rose-400 hover:bg-rose-50 hover:text-rose-600">
+                              <UserMinus className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {roomMembersList.length === 0 && (
+                    <p className="px-3 py-2 text-[11px] text-slate-400">No members loaded</p>
+                  )}
+                </div>
+              )}
+              </div>{/* end messages+members flex row */}
 
               {/* Emoji picker */}
               <AnimatePresence>
@@ -726,6 +912,17 @@ export default function CommunityPage() {
 
               {/* Input bar */}
               <div className="border-t border-slate-100 bg-white p-4">
+                {typingUsers.length > 0 && (
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span className="flex gap-0.5">
+                      {[0,1,2].map((k) => (
+                        <span key={k} className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce"
+                          style={{ animationDelay: `${k * 0.15}s` }} />
+                      ))}
+                    </span>
+                    <span><strong className="text-slate-500">{typingUsers.slice(0, 2).join(', ')}</strong>{typingUsers.length > 2 ? ` +${typingUsers.length - 2} more` : ''} {typingUsers.length === 1 ? 'is' : 'are'} typing…</span>
+                  </div>
+                )}
                 {uploading && (
                   <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -739,7 +936,7 @@ export default function CommunityPage() {
                 <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-all focus-within:border-emerald-300 focus-within:bg-white">
                   <Textarea
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => handleInputChange(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(input) } }}
                     placeholder={`Message ${activeRoom.name}...`}
                     className="min-h-[40px] max-h-24 flex-1 resize-none border-0 bg-transparent p-0 text-sm placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -911,12 +1108,27 @@ export default function CommunityPage() {
               </div>
               {activeRoom.description && <p className="text-sm text-slate-600">{activeRoom.description}</p>}
               <div className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-700">
-                <strong>Open room</strong> — any ScholarFlow user can join this room and see all messages.
+                <strong>Open room</strong> — any ScholarFlow user can join and see all messages.
               </div>
-              <Button variant="outline" size="sm" className="w-full border-rose-200 text-rose-600 hover:bg-rose-50"
-                onClick={() => void handleLeaveRoom()}>
-                Leave Room
-              </Button>
+              {activeRoom.createdBy === authUserId && (
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700 flex items-center gap-2">
+                  <Crown className="h-3.5 w-3.5 text-amber-500" />
+                  <span>You are the <strong>owner</strong> of this room. You can remove members and delete the room.</span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1 border-rose-200 text-rose-600 hover:bg-rose-50"
+                  onClick={() => void handleLeaveRoom()}>
+                  Leave Room
+                </Button>
+                {activeRoom.createdBy === authUserId && (
+                  <Button size="sm" className="flex-1 bg-rose-600 hover:bg-rose-700 text-white gap-1.5"
+                    onClick={() => void handleDeleteRoom()}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Room
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

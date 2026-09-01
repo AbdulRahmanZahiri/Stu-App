@@ -209,6 +209,7 @@ export interface ChatRoom {
   avatar?: string
   color?: string
   createdAt: Date
+  createdBy?: string
 }
 
 export interface ChatMessage {
