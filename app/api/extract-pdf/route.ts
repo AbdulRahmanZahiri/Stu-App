@@ -1,27 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRequire } from 'module'
+import { extractText } from 'unpdf'
 
 export const runtime = 'nodejs'
-
-// createRequire lets us call require() from an ESM module — needed because
-// Next.js compiles API routes as ESM but pdf-parse is CommonJS.
-const nodeRequire = createRequire(import.meta.url)
-
-async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
-  // Import from lib path — skips pdf-parse's main entry which tries to read
-  // a test PDF file and load canvas (both fail in Vercel's serverless env).
-  // pdf-parse is in serverExternalPackages so it's a real Node module at runtime.
-  const pdfParse = nodeRequire('pdf-parse/lib/pdf-parse.js') as (
-    buf: Buffer,
-    opts?: Record<string, unknown>
-  ) => Promise<{ text: string; numpages: number }>
-
-  const result = await pdfParse(buffer, { max: 0 }) // max:0 = all pages
-  return {
-    text: result.text.replace(/\s+/g, ' ').trim(),
-    pages: result.numpages,
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,9 +37,9 @@ export async function POST(req: NextRequest) {
     let pages: number | null = null
 
     if (isPdf) {
-      const result = await extractPdfText(buffer)
-      text = result.text
-      pages = result.pages
+      const result = await extractText(new Uint8Array(buffer), { mergePages: true })
+      text = (result.text as string).replace(/\s+/g, ' ').trim()
+      pages = result.totalPages
     } else if (isDocx) {
       const mammoth = await import('mammoth')
       const result = await mammoth.extractRawText({ buffer })
