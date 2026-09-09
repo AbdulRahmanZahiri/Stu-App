@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createRequire } from 'module'
 
 export const runtime = 'nodejs'
+
+// createRequire is the correct way to load CJS modules from an ESM context in Node.js
+const _require = createRequire(import.meta.url)
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const MAX_PDF_PAGES = 300
@@ -33,8 +37,7 @@ function hasPdfHeader(buffer: Buffer): boolean {
 
 async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
   // pdfjs-dist v3 legacy build: no external worker, no canvas, works on Vercel serverless
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js') as typeof import('pdfjs-dist')
+  const pdfjsLib = _require('pdfjs-dist/legacy/build/pdf.js') as typeof import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = '' // use fake inline worker
 
   const loadingTask = pdfjsLib.getDocument({

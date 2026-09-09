@@ -66,8 +66,8 @@ export async function POST(req: NextRequest) {
     // User was created but Supabase couldn't send the confirmation email
     // (free-tier SMTP rate limit). If the user object exists, treat as success —
     // the user can still sign in if email confirmation is disabled in Supabase.
-    if (data?.user) {
-      return NextResponse.json({ userId: data.user.id })
+    if (data?.user && 'id' in data.user) {
+      return NextResponse.json({ userId: (data.user as { id: string }).id })
     }
     return NextResponse.json({ error: error.message ?? 'Failed to create account' }, { status: 400 })
   }
