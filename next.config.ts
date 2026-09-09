@@ -35,7 +35,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: projectRoot,
-  serverExternalPackages: ['@napi-rs/canvas', 'unpdf', 'pdfjs-dist'],
+  serverExternalPackages: ['@napi-rs/canvas', 'pdfjs-dist', 'mammoth'],
   turbopack: {
     root: projectRoot,
   },

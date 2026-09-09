@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { extractText, getDocumentProxy } from 'unpdf'
 
 export const runtime = 'nodejs'
 
@@ -33,22 +32,43 @@ function hasPdfHeader(buffer: Buffer): boolean {
 }
 
 async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
-  const document = await getDocumentProxy(Uint8Array.from(buffer))
+  // pdfjs-dist v3 legacy build: no external worker, no canvas, works on Vercel serverless
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js') as typeof import('pdfjs-dist')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '' // use fake inline worker
 
-  try {
-    if (document.numPages > MAX_PDF_PAGES) {
-      throw new DocumentImportError(
-        `PDFs are limited to ${MAX_PDF_PAGES} pages. Split this document into smaller files and try again.`,
-        413,
-        'TOO_MANY_PAGES',
-      )
-    }
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    isEvalSupported: false,
+    useSystemFonts: true,
+  })
 
-    const result = await extractText(document, { mergePages: true })
-    const mergedText = Array.isArray(result.text) ? result.text.join('\n\n') : result.text
-    return { text: normalizeExtractedText(mergedText), pages: result.totalPages }
-  } finally {
-    await document.loadingTask.destroy()
+  const document = await loadingTask.promise
+
+  if (document.numPages > MAX_PDF_PAGES) {
+    await loadingTask.destroy()
+    throw new DocumentImportError(
+      `PDFs are limited to ${MAX_PDF_PAGES} pages. Split this document into smaller files and try again.`,
+      413,
+      'TOO_MANY_PAGES',
+    )
+  }
+
+  const parts: string[] = []
+  for (let i = 1; i <= document.numPages; i++) {
+    const page = await document.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item) => ('str' in item ? (item as { str: string }).str : ''))
+      .join(' ')
+    parts.push(pageText)
+  }
+
+  await loadingTask.destroy()
+
+  return {
+    text: normalizeExtractedText(parts.join('\n\n')),
+    pages: document.numPages,
   }
 }
 
@@ -70,12 +90,6 @@ function extractionFailure(error: unknown): NextResponse {
       { status: 422 },
     )
   }
-  if (error instanceof DOMException && error.name === 'DataCloneError') {
-    return NextResponse.json(
-      { error: 'The server PDF runtime is unsupported. Use Node.js 24 and redeploy.', code: 'UNSUPPORTED_RUNTIME' },
-      { status: 503 },
-    )
-  }
 
   console.error('Document extraction error:', error)
   return NextResponse.json(
@@ -86,7 +100,6 @@ function extractionFailure(error: unknown): NextResponse {
 
 export async function POST(req: NextRequest) {
   try {
-    // Reject oversized requests before formData parsing (Next.js truncates at proxyClientMaxBodySize)
     const contentLength = Number(req.headers.get('content-length') ?? 0)
     if (contentLength > (MAX_FILE_SIZE + 65_536)) {
       return NextResponse.json({ error: 'File must be under 10 MB.' }, { status: 413 })
@@ -101,8 +114,8 @@ export async function POST(req: NextRequest) {
         { status: 413 },
       )
     }
-    const file = formData.get('file')
 
+    const file = formData.get('file')
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
     }
