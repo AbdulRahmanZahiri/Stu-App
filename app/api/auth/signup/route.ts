@@ -63,13 +63,11 @@ export async function POST(req: NextRequest) {
   })
 
   if (error) {
-    // Supabase free-tier SMTP is rate-limited. Surface a clear message instead of
-    // the raw Supabase error so the user knows what to do.
-    if (/sending confirmation email|email.*rate|smtp/i.test(error.message)) {
-      return NextResponse.json(
-        { error: 'Account created but the confirmation email could not be sent — Supabase email limits reached. Ask your admin to disable email confirmation or configure a custom SMTP provider.' },
-        { status: 503 },
-      )
+    // User was created but Supabase couldn't send the confirmation email
+    // (free-tier SMTP rate limit). If the user object exists, treat as success —
+    // the user can still sign in if email confirmation is disabled in Supabase.
+    if (data?.user) {
+      return NextResponse.json({ userId: data.user.id })
     }
     return NextResponse.json({ error: error.message ?? 'Failed to create account' }, { status: 400 })
   }
