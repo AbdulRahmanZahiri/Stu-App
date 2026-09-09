@@ -35,7 +35,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: projectRoot,
-  serverExternalPackages: ['@napi-rs/canvas'],
+  serverExternalPackages: ['@napi-rs/canvas', 'unpdf', 'pdfjs-dist'],
   turbopack: {
     root: projectRoot,
   },
@@ -48,6 +48,7 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts'],
+    proxyClientMaxBodySize: 15 * 1024 * 1024,
   },
   async headers() {
     return [

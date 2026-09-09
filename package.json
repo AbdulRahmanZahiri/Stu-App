@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -34,8 +34,6 @@
     "lucide-react": "^0.468.0",
     "mammoth": "^1.12.1",
     "next": "^16.3.0",
-    "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^6.3.289",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.13.3",
@@ -45,7 +43,7 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.20",

@@ -1,15 +1,9 @@
-import Groq from 'groq-sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireApiUser } from '@/lib/api-auth'
 import { parseSyllabusLocally, type ParsedSyllabusData } from '@/lib/basic-syllabus-parser'
+import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
-let client: Groq | null = null
-function getClient(): Groq {
-  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  return client
-}
-
-const MAX_TEXT_LENGTH = 15_000
+const MAX_TEXT_LENGTH = 50_000
 const MAX_FILENAME_LENGTH = 260
 
 type JsonObject = Record<string, unknown>
@@ -53,6 +47,7 @@ function normalizeResult(value: unknown): ParsedSyllabusData {
         .slice(0, 50)
     : []
 
+  const currentYear = new Date().getFullYear()
   const keyDates = Array.isArray(source.keyDates)
     ? source.keyDates
         .flatMap((item) => {
@@ -61,7 +56,11 @@ function normalizeResult(value: unknown): ParsedSyllabusData {
           const title = cleanString(row.title, 200)
           const date = cleanString(row.date, 50)
           if (!title || !date) return []
-          const parsedDate = new Date(date)
+          // Try parse as-is (ISO 8601 preferred), then with year suffix fallbacks
+          let parsedDate = new Date(date)
+          if (Number.isNaN(parsedDate.getTime())) parsedDate = new Date(`${date}, ${currentYear}`)
+          if (Number.isNaN(parsedDate.getTime())) parsedDate = new Date(`${date} ${currentYear}`)
+          if (Number.isNaN(parsedDate.getTime())) parsedDate = new Date(`${date}, ${currentYear + 1}`)
           if (Number.isNaN(parsedDate.getTime())) return []
           return [{ title, date: parsedDate.toISOString() }]
         })
@@ -136,10 +135,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const response = await getClient().chat.completions.create({
-      model: 'qwen/qwen3.8-27b',
+    const response = await groqChat({
+      model: GROQ_MODEL,
       temperature: 0,
-      max_tokens: 2500,
+      max_tokens: 8000,
       response_format: { type: 'json_object' },
       messages: [
         {

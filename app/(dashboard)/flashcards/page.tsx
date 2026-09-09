@@ -156,7 +156,11 @@ export default function FlashcardsPage() {
       }
       if (!res.ok) throw new Error(data.error || 'Generation failed')
 
-      setCards(data.cards ?? [])
+      const generatedCards = data.cards ?? []
+      if (generatedCards.length === 0) {
+        throw new Error('No flashcards were generated. Try providing more detailed content.')
+      }
+      setCards(generatedCards)
       setCardIndex(0)
       setIsFlipped(false)
       setResults([])

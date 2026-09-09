@@ -1,11 +1,36 @@
-import Groq from 'groq-sdk'
+import Groq, { APIError } from 'groq-sdk'
+import type { ChatCompletionCreateParamsStreaming } from 'groq-sdk/resources/chat/completions'
 import { NextRequest, NextResponse } from 'next/server'
 import { optionalApiUser } from '@/lib/api-auth'
+import { GROQ_MODEL } from '@/lib/groq-client'
 
-let client: Groq | null = null
+const MAX_RETRY_WAIT_MS = 35_000
+const MAX_ATTEMPTS = 4
+
+let _client: Groq | null = null
 function getClient(): Groq {
-  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  return client
+  if (!_client) _client = new Groq({ apiKey: process.env.GROQ_API_KEY, maxRetries: 0, timeout: 120_000 })
+  return _client
+}
+
+async function createStreamWithRetry(params: ChatCompletionCreateParamsStreaming) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      return await getClient().chat.completions.create(params)
+    } catch (err) {
+      lastError = err
+      if (!(err instanceof APIError) || err.status !== 429) throw err
+      const header = (err as unknown as { headers?: Record<string, string> }).headers?.['retry-after']
+      const waitMs = header ? parseFloat(header) * 1000 : Math.min(3_000 * 3 ** attempt, MAX_RETRY_WAIT_MS)
+      if (waitMs > MAX_RETRY_WAIT_MS || attempt === MAX_ATTEMPTS - 1) {
+        const retryAfter = Math.ceil(waitMs / 1000)
+        throw Object.assign(new Error(`Rate limit — try again in ${retryAfter}s`), { code: 'RATE_LIMITED', retryAfter })
+      }
+      await new Promise((r) => setTimeout(r, waitMs))
+    }
+  }
+  throw lastError
 }
 
 const SYSTEM_PROMPT = `You are an AI academic assistant for ScholarFlow, a student portal for university students.
@@ -81,8 +106,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const stream = await getClient().chat.completions.create({
-      model: 'qwen/qwen3.8-27b',
+    const stream = await createStreamWithRetry({
+      model: GROQ_MODEL,
       max_tokens: 1024,
       stream: true,
       messages: [{ role: 'system', content: `${SYSTEM_PROMPT}${courseContext}` }, ...messages],
@@ -111,10 +136,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 400 })
     }
     console.error('AI route error:', error)
+    const err = error as Error & { code?: string; retryAfter?: number }
+    if (err.code === 'RATE_LIMITED') {
+      return NextResponse.json({ error: err.message, retryAfter: err.retryAfter }, { status: 429 })
+    }
     const msg = message.includes('401') || message.includes('Authentication')
       ? 'AI API key is invalid or missing.'
-      : message.includes('429') || message.includes('rate_limit')
-      ? 'Rate limit hit. Wait 30 seconds and try again.'
       : 'Failed to get AI response'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

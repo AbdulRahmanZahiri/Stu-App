@@ -12,6 +12,7 @@ import {
   createTasks,
   deleteCourseRecord,
   deleteNoteRecord,
+  updateNoteRecord,
   deleteCalendarEventRecord,
   deleteTaskRecord,
   loadUserAppData,
@@ -106,6 +107,7 @@ interface AppStore {
   addCalendarEvent: (event: CalendarEvent) => void
   deleteCalendarEvent: (id: string) => void
   addNote: (note: Note, file?: File) => void
+  updateNote: (id: string, patch: Partial<Pick<Note, 'title' | 'content' | 'courseId' | 'courseCode' | 'tags' | 'excerpt'>>) => void
   deleteNote: (id: string) => void
   addAudioItem: (item: AudioStudyItem) => void
   saveSyllabusImport: (input: SyllabusImportInput) => Promise<void>
@@ -312,6 +314,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [handlePersistenceError, profile?.name, user])
 
+  const updateNote = useCallback((id: string, patch: Partial<Pick<Note, 'title' | 'content' | 'courseId' | 'courseCode' | 'tags' | 'excerpt'>>) => {
+    setNotes((previous) => previous.map((item) => item.id === id ? {
+      ...item,
+      ...patch,
+      excerpt: patch.content ? patch.content.slice(0, 160) : item.excerpt,
+      updatedAt: new Date(),
+    } : item))
+    if (user) void updateNoteRecord(id, patch).catch(handlePersistenceError)
+  }, [handlePersistenceError, user])
+
   const deleteNote = useCallback((id: string) => {
     const note = notes.find((item) => item.id === id)
     setNotes((previous) => previous.filter((item) => item.id !== id))
@@ -390,6 +402,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addCalendarEvent,
       deleteCalendarEvent,
       addNote,
+      updateNote,
       deleteNote,
       addAudioItem,
       saveSyllabusImport,

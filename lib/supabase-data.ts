@@ -531,6 +531,18 @@ export async function createNote(note: Note, userId: string, file?: File): Promi
   return mapNote(data as JsonObject, userId, note.authorName)
 }
 
+export async function updateNoteRecord(id: string, patch: Partial<Pick<Note, 'title' | 'content' | 'courseId' | 'courseCode' | 'tags' | 'excerpt'>>): Promise<void> {
+  const { error } = await supabase.from('notes').update({
+    ...(patch.title !== undefined && { title: patch.title }),
+    ...(patch.content !== undefined && { content: patch.content, excerpt: patch.content.slice(0, 160) }),
+    ...(patch.courseId !== undefined && { course_id: patch.courseId || null }),
+    ...(patch.courseCode !== undefined && { course_code: patch.courseCode || null }),
+    ...(patch.tags !== undefined && { tags: patch.tags }),
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
+  if (error) dataError('Could not update note', error)
+}
+
 export async function deleteNoteRecord(note: Note): Promise<void> {
   const { error } = await supabase.from('notes').delete().eq('id', note.id)
   if (error) dataError('Could not delete note', error)

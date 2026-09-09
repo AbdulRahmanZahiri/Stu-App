@@ -7,6 +7,7 @@ import {
   MessageSquare, Send, Users, Hash, Plus, Search, Image as ImageIcon,
   Smile, Paperclip, MoreVertical, X, Check, FileText, Download,
   Languages, Globe, Loader2, Crown, UserMinus, Trash2, Link, Copy,
+  HelpCircle, GraduationCap, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { toast } from 'sonner'
 import { mockChatRooms, mockChatMessages } from '@/lib/mock-data'
 import { getInitials, cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
@@ -64,16 +66,29 @@ const LANGUAGES = [
 ]
 
 const roomTypeIcon: Record<string, React.ElementType> = {
-  course: Hash, major: Users, general: MessageSquare, direct: MessageSquare,
+  course: Hash, major: Users, general: MessageSquare, direct: MessageSquare, faculty: GraduationCap,
 }
 
 const ROOM_COLORS = ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 
+const FACULTIES = [
+  { id: 'engineering', label: 'Engineering', color: '#3b82f6' },
+  { id: 'sciences', label: 'Sciences', color: '#10b981' },
+  { id: 'arts', label: 'Arts & Humanities', color: '#f59e0b' },
+  { id: 'business', label: 'Business', color: '#8b5cf6' },
+  { id: 'medicine', label: 'Medicine & Health', color: '#ef4444' },
+  { id: 'law', label: 'Law', color: '#6366f1' },
+  { id: 'education', label: 'Education', color: '#06b6d4' },
+  { id: 'social', label: 'Social Sciences', color: '#ec4899' },
+]
+
 const DEFAULT_ROOMS: Array<Pick<RoomRow, 'name' | 'type' | 'description' | 'course_code' | 'university_name' | 'color'>> = [
-  { name: 'General Student Lounge', type: 'general', description: 'Open room for all ScholarFlow students', course_code: null, university_name: 'Community', color: '#f59e0b' },
-  { name: 'Study Tips & Tricks', type: 'general', description: 'Share your best study strategies', course_code: null, university_name: 'Community', color: '#10b981' },
-  { name: 'Exam Prep Room', type: 'general', description: 'Preparing for midterms and finals together', course_code: null, university_name: 'Community', color: '#8b5cf6' },
-  { name: 'CS Major Chat', type: 'major', description: 'Computer Science students worldwide', course_code: null, university_name: 'Community', color: '#6366f1' },
+  { name: 'General Student Lounge', type: 'general', description: 'Open room for all ScholarFlow students', course_code: null, university_name: 'General', color: '#f59e0b' },
+  { name: 'Study Tips & Tricks', type: 'general', description: 'Share your best study strategies', course_code: null, university_name: 'General', color: '#10b981' },
+  { name: 'Exam Prep Room', type: 'general', description: 'Preparing for midterms and finals together', course_code: null, university_name: 'General', color: '#8b5cf6' },
+  { name: 'Engineering Students', type: 'faculty', description: 'Engineering faculty group chat', course_code: null, university_name: 'Engineering', color: '#3b82f6' },
+  { name: 'Sciences Hub', type: 'faculty', description: 'Sciences faculty group chat', course_code: null, university_name: 'Sciences', color: '#10b981' },
+  { name: 'Business & Commerce', type: 'faculty', description: 'Business faculty group chat', course_code: null, university_name: 'Business', color: '#8b5cf6' },
 ]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -174,7 +189,14 @@ function CommunityPageInner() {
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [newRoom, setNewRoom] = useState({ name: '', type: 'general' as ChatRoom['type'], description: '', color: '#6366f1' })
+  const [newRoom, setNewRoom] = useState({ name: '', type: 'general' as ChatRoom['type'], description: '', color: '#6366f1', faculty: '' })
+  const [isAskingQuestion, setIsAskingQuestion] = useState(false)
+  const [facultyFilter, setFacultyFilter] = useState<string | null>(null)
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+
+  function toggleSection(key: string) {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null
   const roomMessages = useMemo(() => activeRoomId
@@ -183,9 +205,6 @@ function CommunityPageInner() {
   const myRooms = rooms.filter((r) => myRoomIds.has(r.id))
   const filteredRooms = myRooms.filter((r) => !search || r.name.toLowerCase().includes(search.toLowerCase()))
   const browseQuery = browseSearch.trim().toLowerCase()
-  const browseRooms = browseQuery.length > 0
-    ? rooms.filter((r) => r.name.toLowerCase().includes(browseQuery) || (r.description ?? '').toLowerCase().includes(browseQuery))
-    : []
   const selectedLangData = LANGUAGES.find((l) => l.code === selectedLang) ?? LANGUAGES[0]
 
   useEffect(() => { activeRoomRef.current = activeRoomId }, [activeRoomId])
@@ -198,6 +217,7 @@ function CommunityPageInner() {
     const target = rooms.find((r) => r.id === joinId)
     if (!target) return
     if (myRoomIds.has(joinId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveRoomId(joinId)
     } else {
       setBrowseSearch(target.name)
@@ -301,6 +321,7 @@ function CommunityPageInner() {
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!authUserId) { setDemoMode(); return }
     let cancelled = false
 
@@ -326,6 +347,7 @@ function CommunityPageInner() {
     }
     init()
     return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUserId, refreshRooms, setDemoMode])
 
   // ── Realtime: rooms ────────────────────────────────────────────────────────
@@ -526,12 +548,15 @@ function CommunityPageInner() {
         color: newRoom.color, unreadCount: 0, createdAt: new Date(),
       }
       setRooms((prev) => [...prev, room]); setActiveRoomId(room.id)
-      setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1' }); setShowCreateRoom(false)
+      setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1', faculty: '' }); setShowCreateRoom(false)
       return
     }
     try {
+      const facultyMeta = FACULTIES.find((f) => f.id === newRoom.faculty)
+      const resolvedColor = newRoom.faculty && facultyMeta ? facultyMeta.color : newRoom.color
+      const resolvedUniversity = newRoom.faculty ? (facultyMeta?.label ?? newRoom.faculty) : 'General'
       const { data, error } = await supabase.from('chat_rooms')
-        .insert({ name: newRoom.name.trim(), type: newRoom.type, description: newRoom.description.trim() || null, color: newRoom.color, university_name: 'Community', created_by: authUserId })
+        .insert({ name: newRoom.name.trim(), type: newRoom.type, description: newRoom.description.trim() || null, color: resolvedColor, university_name: resolvedUniversity, created_by: authUserId })
         .select('id,name,type,description,course_code,university_name,color,created_at,created_by').single()
       if (error || !data) throw error ?? new Error('Failed to create room.')
       // Try with role column (migration applied); fall back to bare insert
@@ -543,7 +568,7 @@ function CommunityPageInner() {
       await sendSystemMessage(data.id, `${currentUser.name} created this room`)
       await refreshRooms(authUserId, true)
       setActiveRoomId(data.id)
-      setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1' }); setShowCreateRoom(false); setChatError(null)
+      setNewRoom({ name: '', type: 'general', description: '', color: '#6366f1', faculty: '' }); setShowCreateRoom(false); setChatError(null)
     } catch (err) { setChatError(getErrorMessage(err)) }
   }
 
@@ -552,13 +577,19 @@ function CommunityPageInner() {
     setJoiningRoomId(roomId)
     try {
       await ensureMembership(roomId, authUserId, currentUser.name, 'member')
+      // Optimistically add to sidebar and bump member count before DB round-trip
       setMyRoomIds((prev) => new Set([...prev, roomId]))
+      setRooms((prev) => prev.map((r) => r.id === roomId ? { ...r, memberCount: r.memberCount + 1 } : r))
       await sendSystemMessage(roomId, `${currentUser.name} joined the room`)
       await fetchMessages(roomId)
       await fetchRoomMembers(roomId)
+      // Confirm real count from DB in the background
+      void refreshRooms(authUserId, true)
       setActiveRoomId(roomId)
       setShowBrowse(false)
       setBrowseSearch('')
+      const roomName = rooms.find((r) => r.id === roomId)?.name ?? 'room'
+      toast.success(`Joined ${roomName}`)
     } catch (err) { setChatError(getErrorMessage(err)) }
     finally { setJoiningRoomId(null) }
   }
@@ -609,13 +640,19 @@ function CommunityPageInner() {
       setActiveRoomId(null); setShowRoomInfo(false); return
     }
     try {
-      await sendSystemMessage(activeRoomId, `${currentUser.name} left the room`)
+      const leavingRoom = rooms.find((r) => r.id === activeRoomId)
       const { error } = await supabase.from('room_members').delete().eq('room_id', activeRoomId).eq('student_id', authUserId)
       if (error) throw error
+      // Send system message only after successful leave
+      await sendSystemMessage(activeRoomId, `${currentUser.name} left the room`)
       setMyRoomIds((prev) => { const next = new Set(prev); next.delete(activeRoomId); return next })
+      // Optimistically drop member count
+      setRooms((prev) => prev.map((r) => r.id === activeRoomId ? { ...r, memberCount: Math.max(0, r.memberCount - 1) } : r))
       const nextRoom = myRooms.find((r) => r.id !== activeRoomId)
       setActiveRoomId(nextRoom?.id ?? null)
       setShowRoomInfo(false); setChatError(null)
+      void refreshRooms(authUserId, true)
+      if (leavingRoom) toast(`Left ${leavingRoom.name}`)
     } catch (err) { setChatError(getErrorMessage(err)) }
   }
 
@@ -672,29 +709,124 @@ function CommunityPageInner() {
                 Browse
               </button>
             </div>
-            {filteredRooms.map((room) => {
-              const Icon = roomTypeIcon[room.type] ?? MessageSquare
-              const isActive = activeRoom?.id === room.id
+
+            {/* Faculty Groups */}
+            {(() => {
+              const facultyRooms = filteredRooms.filter((r) => r.type === 'faculty' || r.type === 'major')
+              if (facultyRooms.length === 0) return null
+              const collapsed = collapsedSections['faculty']
               return (
-                <button key={room.id} onClick={() => setActiveRoomId(room.id)}
-                  className={cn('mb-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all',
-                    isActive ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50')}>
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: (room.color ?? '#6366f1') + '20' }}>
-                    <Icon className="h-4 w-4" style={{ color: room.color ?? '#6366f1' }} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold">{room.name}</p>
-                    <p className="truncate text-[10px] text-slate-400">{room.memberCount} members</p>
-                  </div>
-                  {(room.unreadCount ?? 0) > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white">
-                      {room.unreadCount}
-                    </span>
-                  )}
-                </button>
+                <div className="mb-1">
+                  <button onClick={() => toggleSection('faculty')}
+                    className="flex w-full items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-500 hover:text-indigo-700 transition-colors">
+                    {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <GraduationCap className="h-3 w-3 mr-0.5" />
+                    Faculty Groups
+                  </button>
+                  {!collapsed && facultyRooms.map((room) => {
+                    const isActive = activeRoom?.id === room.id
+                    return (
+                      <button key={room.id} onClick={() => setActiveRoomId(room.id)}
+                        className={cn('mb-0.5 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-all',
+                          isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50')}>
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                          style={{ backgroundColor: (room.color ?? '#6366f1') + '25' }}>
+                          <GraduationCap className="h-3.5 w-3.5" style={{ color: room.color ?? '#6366f1' }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold">{room.name}</p>
+                          <p className="truncate text-[10px] text-slate-400">{room.university ?? room.type} · {room.memberCount}</p>
+                        </div>
+                        {(room.unreadCount ?? 0) > 0 && (
+                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-500 px-1 text-[9px] font-bold text-white">
+                            {room.unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               )
-            })}
+            })()}
+
+            {/* Course Rooms */}
+            {(() => {
+              const courseRooms = filteredRooms.filter((r) => r.type === 'course')
+              if (courseRooms.length === 0) return null
+              const collapsed = collapsedSections['course']
+              return (
+                <div className="mb-1">
+                  <button onClick={() => toggleSection('course')}
+                    className="flex w-full items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-blue-500 hover:text-blue-700 transition-colors">
+                    {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <Hash className="h-3 w-3 mr-0.5" />
+                    Course Rooms
+                  </button>
+                  {!collapsed && courseRooms.map((room) => {
+                    const isActive = activeRoom?.id === room.id
+                    return (
+                      <button key={room.id} onClick={() => setActiveRoomId(room.id)}
+                        className={cn('mb-0.5 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-all',
+                          isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50')}>
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                          style={{ backgroundColor: (room.color ?? '#3b82f6') + '25' }}>
+                          <Hash className="h-3.5 w-3.5" style={{ color: room.color ?? '#3b82f6' }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold">{room.name}</p>
+                          <p className="truncate text-[10px] text-slate-400">{room.courseCode ?? 'Course'} · {room.memberCount}</p>
+                        </div>
+                        {(room.unreadCount ?? 0) > 0 && (
+                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[9px] font-bold text-white">
+                            {room.unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
+            {/* General Rooms */}
+            {(() => {
+              const generalRooms = filteredRooms.filter((r) => r.type === 'general' || r.type === 'direct')
+              if (generalRooms.length === 0) return null
+              const collapsed = collapsedSections['general']
+              return (
+                <div className="mb-1">
+                  <button onClick={() => toggleSection('general')}
+                    className="flex w-full items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 transition-colors">
+                    {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <MessageSquare className="h-3 w-3 mr-0.5" />
+                    General
+                  </button>
+                  {!collapsed && generalRooms.map((room) => {
+                    const isActive = activeRoom?.id === room.id
+                    return (
+                      <button key={room.id} onClick={() => setActiveRoomId(room.id)}
+                        className={cn('mb-0.5 flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-all',
+                          isActive ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50')}>
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                          style={{ backgroundColor: (room.color ?? '#10b981') + '25' }}>
+                          <MessageSquare className="h-3.5 w-3.5" style={{ color: room.color ?? '#10b981' }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold">{room.name}</p>
+                          <p className="truncate text-[10px] text-slate-400">{room.memberCount} members</p>
+                        </div>
+                        {(room.unreadCount ?? 0) > 0 && (
+                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
+                            {room.unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
             {!loadingRooms && filteredRooms.length === 0 && (
               <div className="px-3 py-4 text-center">
                 <p className="text-xs text-slate-400">No rooms joined yet</p>
@@ -802,6 +934,7 @@ function CommunityPageInner() {
                       const showName = showAvatar
                       const isImage = msg.type === 'image'
                       const isFile = msg.type === 'file'
+                      const isQuestion = msg.type === 'question'
                       const hasTranslation = !!translations[msg.id]
                       const isTranslating = !!translating[msg.id]
 
@@ -873,11 +1006,26 @@ function CommunityPageInner() {
                                 </a>
                               )}
 
-                              {/* Text message */}
-                              {!isImage && !isFile && (
+                              {/* Text / Question message */}
+                              {!isImage && !isFile && !isQuestion && (
                                 <div className={cn('rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
                                   isMe ? 'rounded-br-sm bg-gradient-to-br from-emerald-600 to-green-600 text-white'
                                     : 'rounded-bl-sm border border-slate-100 bg-white text-slate-800 shadow-sm')}>
+                                  {msg.content}
+                                </div>
+                              )}
+
+                              {/* Question message */}
+                              {isQuestion && (
+                                <div className={cn('rounded-2xl px-4 py-3 text-sm leading-relaxed border-2',
+                                  isMe
+                                    ? 'rounded-br-sm bg-gradient-to-br from-violet-600 to-indigo-600 text-white border-violet-400'
+                                    : 'rounded-bl-sm bg-violet-50 border-violet-200 text-slate-800')}>
+                                  <div className={cn('flex items-center gap-1.5 mb-1.5 text-[11px] font-bold uppercase tracking-wider',
+                                    isMe ? 'text-violet-200' : 'text-violet-500')}>
+                                    <HelpCircle className="h-3.5 w-3.5" />
+                                    Question
+                                  </div>
                                   {msg.content}
                                 </div>
                               )}
@@ -890,7 +1038,7 @@ function CommunityPageInner() {
                                 </div>
                               )}
 
-                              {/* Translate button (appears on hover, only for text messages) */}
+                              {/* Translate button (appears on hover, only for text/question messages) */}
                               {!isImage && !isFile && (
                                 <button
                                   onClick={() => void handleTranslate(msg.id, msg.content)}
@@ -1022,20 +1170,39 @@ function CommunityPageInner() {
                     Uploading file...
                   </div>
                 )}
+
+                {/* Question mode banner */}
+                {isAskingQuestion && (
+                  <div className="mb-2 flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
+                    <HelpCircle className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                    <p className="flex-1 text-[11px] text-violet-700 font-medium">Asking a question — your message will be highlighted for others to answer</p>
+                    <button onClick={() => setIsAskingQuestion(false)} className="text-violet-400 hover:text-violet-600">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 <input ref={fileRef} type="file" className="hidden"
                   accept="image/*,application/pdf"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFileAttach(f) }}
                 />
-                <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-all focus-within:border-emerald-300 focus-within:bg-white">
+                <div className={cn('flex items-end gap-3 rounded-2xl border p-3 transition-all',
+                  isAskingQuestion
+                    ? 'border-violet-300 bg-violet-50 focus-within:border-violet-400 focus-within:bg-white'
+                    : 'border-slate-200 bg-slate-50 focus-within:border-emerald-300 focus-within:bg-white')}>
                   <Textarea
                     value={input}
                     onChange={(e) => handleInputChange(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(input) } }}
-                    placeholder={`Message ${activeRoom.name}...`}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(input, isAskingQuestion ? 'question' : 'text').then(() => setIsAskingQuestion(false)) } }}
+                    placeholder={isAskingQuestion ? 'Type your question...' : `Message ${activeRoom.name}...`}
                     className="min-h-[40px] max-h-24 flex-1 resize-none border-0 bg-transparent p-0 text-sm placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0"
                     rows={1}
                   />
                   <div className="flex shrink-0 items-center gap-1.5">
+                    <Button variant="ghost" size="icon" className={cn('h-8 w-8', isAskingQuestion ? 'text-violet-500 bg-violet-100' : 'text-slate-400 hover:text-violet-500')}
+                      onClick={() => setIsAskingQuestion((v) => !v)} title="Ask a question">
+                      <HelpCircle className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-amber-500"
                       onClick={() => setShowEmoji((v) => !v)} title="Emoji">
                       <Smile className="h-4 w-4" />
@@ -1048,14 +1215,16 @@ function CommunityPageInner() {
                       onClick={() => { if (fileRef.current) { fileRef.current.accept = 'image/*'; fileRef.current.click() } }} title="Send image">
                       <ImageIcon className="h-4 w-4" />
                     </Button>
-                    <Button size="icon" className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-green-500 text-white"
-                      onClick={() => void sendMessage(input)} disabled={!input.trim() || uploading}>
-                      <Send className="h-3.5 w-3.5" />
+                    <Button size="icon" className={cn('h-8 w-8 rounded-xl text-white',
+                      isAskingQuestion ? 'bg-gradient-to-br from-violet-500 to-indigo-500' : 'bg-gradient-to-br from-emerald-500 to-green-500')}
+                      onClick={() => { void sendMessage(input, isAskingQuestion ? 'question' : 'text'); setIsAskingQuestion(false) }}
+                      disabled={!input.trim() || uploading}>
+                      {isAskingQuestion ? <HelpCircle className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
                 </div>
                 <p className="mt-1.5 text-center text-[10px] text-slate-300">
-                  Share images & PDFs · {selectedLang !== 'en' ? `Hover a message → translate to ${selectedLangData.flag}` : 'Pick a language in the sidebar to translate messages'}
+                  {isAskingQuestion ? 'Press Enter or the ? button to post your question' : `Share images & PDFs · ${selectedLang !== 'en' ? `Hover a message → translate to ${selectedLangData.flag}` : 'Pick a language in the sidebar to translate'}`}
                 </p>
               </div>
             </>
@@ -1093,33 +1262,57 @@ function CommunityPageInner() {
             </div>
             <div>
               <Label className="mb-1.5 block text-xs font-medium">Type</Label>
-              <Select value={newRoom.type} onValueChange={(v) => setNewRoom((p) => ({ ...p, type: v as ChatRoom['type'] }))}>
+              <Select value={newRoom.type} onValueChange={(v) => setNewRoom((p) => ({ ...p, type: v as ChatRoom['type'], faculty: '' }))}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="general">💬 General</SelectItem>
-                  <SelectItem value="course">📚 Course</SelectItem>
-                  <SelectItem value="major">🎓 Major</SelectItem>
+                  <SelectItem value="course">📚 Course Room</SelectItem>
+                  <SelectItem value="faculty">🎓 Faculty Group</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Faculty selector — shown for faculty rooms */}
+            {newRoom.type === 'faculty' && (
+              <div>
+                <Label className="mb-1.5 block text-xs font-medium">Faculty / Department</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {FACULTIES.map((f) => (
+                    <button key={f.id} onClick={() => setNewRoom((p) => ({ ...p, faculty: f.id, color: f.color }))}
+                      className={cn('flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-all',
+                        newRoom.faculty === f.id
+                          ? 'border-transparent text-white font-semibold'
+                          : 'border-slate-200 text-slate-700 hover:border-slate-300 bg-slate-50')}
+                      style={newRoom.faculty === f.id ? { backgroundColor: f.color } : {}}>
+                      <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: newRoom.faculty === f.id ? 'rgba(255,255,255,0.7)' : f.color }} />
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <Label className="mb-1.5 block text-xs font-medium">Description</Label>
               <Input placeholder="What's this room about?" value={newRoom.description}
                 onChange={(e) => setNewRoom((p) => ({ ...p, description: e.target.value }))} />
             </div>
-            <div>
-              <Label className="mb-1.5 block text-xs font-medium">Color</Label>
-              <div className="flex gap-2">
-                {ROOM_COLORS.map((color) => (
-                  <button key={color} onClick={() => setNewRoom((p) => ({ ...p, color }))}
-                    className={cn('h-7 w-7 rounded-full transition-all', newRoom.color === color ? 'scale-110 ring-2 ring-emerald-500 ring-offset-2' : 'hover:scale-105')}
-                    style={{ backgroundColor: color }} />
-                ))}
+            {newRoom.type !== 'faculty' && (
+              <div>
+                <Label className="mb-1.5 block text-xs font-medium">Color</Label>
+                <div className="flex gap-2">
+                  {ROOM_COLORS.map((color) => (
+                    <button key={color} onClick={() => setNewRoom((p) => ({ ...p, color }))}
+                      className={cn('h-7 w-7 rounded-full transition-all', newRoom.color === color ? 'scale-110 ring-2 ring-emerald-500 ring-offset-2' : 'hover:scale-105')}
+                      style={{ backgroundColor: color }} />
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             <div className="flex gap-2 pt-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowCreateRoom(false)}>Cancel</Button>
-              <Button variant="gradient" size="sm" className="flex-1" onClick={() => void createRoom()} disabled={!newRoom.name.trim()}>
+              <Button variant="gradient" size="sm" className="flex-1" onClick={() => void createRoom()}
+                disabled={!newRoom.name.trim() || (newRoom.type === 'faculty' && !newRoom.faculty)}>
                 <Check className="h-3.5 w-3.5" />
                 Create Room
               </Button>
@@ -1129,58 +1322,105 @@ function CommunityPageInner() {
       </Dialog>
 
       {/* ── Browse rooms dialog ───────────────────────────────────────────── */}
-      <Dialog open={showBrowse} onOpenChange={setShowBrowse}>
-        <DialogContent className="max-w-md">
+      <Dialog open={showBrowse} onOpenChange={(open) => { setShowBrowse(open); if (!open) { setBrowseSearch(''); setFacultyFilter(null) } }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Browse Rooms</DialogTitle></DialogHeader>
           <div className="mt-2 space-y-3">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <Input placeholder="Search by room name..." value={browseSearch}
-                onChange={(e) => setBrowseSearch(e.target.value)}
+              <Input placeholder="Search rooms, courses, faculties..." value={browseSearch}
+                onChange={(e) => { setBrowseSearch(e.target.value); setFacultyFilter(null) }}
                 className="pl-8" autoFocus />
             </div>
+
+            {/* Faculty filter chips */}
+            {!browseQuery && (
+              <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => setFacultyFilter(null)}
+                  className={cn('rounded-full px-3 py-1 text-[11px] font-medium transition-all border',
+                    !facultyFilter ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 text-slate-600 hover:border-slate-300 bg-white')}>
+                  All
+                </button>
+                <button onClick={() => setFacultyFilter('general')}
+                  className={cn('rounded-full px-3 py-1 text-[11px] font-medium transition-all border',
+                    facultyFilter === 'general' ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 text-slate-600 hover:border-slate-300 bg-white')}>
+                  General
+                </button>
+                {FACULTIES.map((f) => (
+                  <button key={f.id} onClick={() => setFacultyFilter(f.id)}
+                    className={cn('rounded-full px-3 py-1 text-[11px] font-medium transition-all border',
+                      facultyFilter === f.id ? 'text-white border-transparent' : 'border-slate-200 text-slate-600 hover:border-slate-300 bg-white')}
+                    style={facultyFilter === f.id ? { backgroundColor: f.color, borderColor: f.color } : {}}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <ScrollArea className="h-72">
               <div className="space-y-1.5 pr-2">
-                {browseRooms.map((room) => {
-                  const Icon = roomTypeIcon[room.type] ?? MessageSquare
-                  const isMember = myRoomIds.has(room.id)
-                  const isJoining = joiningRoomId === room.id
-                  return (
-                    <div key={room.id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                        style={{ backgroundColor: (room.color ?? '#6366f1') + '20' }}>
-                        <Icon className="h-4 w-4" style={{ color: room.color ?? '#6366f1' }} />
+                {(() => {
+                  let displayRooms = rooms
+                  if (browseQuery) {
+                    displayRooms = rooms.filter((r) => r.name.toLowerCase().includes(browseQuery) || (r.description ?? '').toLowerCase().includes(browseQuery) || (r.university ?? '').toLowerCase().includes(browseQuery))
+                  } else if (facultyFilter === 'general') {
+                    displayRooms = rooms.filter((r) => r.type === 'general')
+                  } else if (facultyFilter) {
+                    const fLabel = FACULTIES.find((f) => f.id === facultyFilter)?.label ?? ''
+                    displayRooms = rooms.filter((r) => (r.university ?? '').toLowerCase() === fLabel.toLowerCase() || r.type === 'faculty')
+                  }
+                  if (displayRooms.length === 0) {
+                    return browseQuery
+                      ? <p className="py-6 text-center text-sm text-slate-400">No rooms found for &quot;{browseSearch}&quot;</p>
+                      : (
+                        <div className="flex flex-col items-center justify-center py-8 text-center">
+                          <Search className="mb-2 h-8 w-8 text-slate-200" />
+                          <p className="text-sm font-medium text-slate-500">No rooms in this category yet</p>
+                          <button onClick={() => { setShowBrowse(false); setShowCreateRoom(true) }}
+                            className="mt-2 text-[11px] font-medium text-emerald-600 hover:underline">Create one →</button>
+                        </div>
+                      )
+                  }
+                  return displayRooms.map((room) => {
+                    const Icon = roomTypeIcon[room.type] ?? MessageSquare
+                    const isMember = myRoomIds.has(room.id)
+                    const isJoining = joiningRoomId === room.id
+                    const facultyLabel = room.university && room.university !== 'General' ? room.university : null
+                    return (
+                      <div key={room.id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                          style={{ backgroundColor: (room.color ?? '#6366f1') + '20' }}>
+                          <Icon className="h-4 w-4" style={{ color: room.color ?? '#6366f1' }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold text-slate-800">{room.name}</p>
+                          {room.description && <p className="truncate text-[10px] text-slate-400">{room.description}</p>}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {facultyLabel && (
+                              <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+                                style={{ backgroundColor: (room.color ?? '#6366f1') + '20', color: room.color ?? '#6366f1' }}>
+                                {facultyLabel}
+                              </span>
+                            )}
+                            <p className="text-[10px] text-slate-400">{room.memberCount} members</p>
+                          </div>
+                        </div>
+                        {isMember ? (
+                          <Button size="sm" variant="outline" className="shrink-0 h-7 px-2.5 text-xs text-emerald-600 border-emerald-200"
+                            onClick={() => { setActiveRoomId(room.id); setShowBrowse(false); setBrowseSearch(''); setFacultyFilter(null) }}>
+                            <Check className="h-3 w-3 mr-1" />
+                            Open
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="gradient" className="shrink-0 h-7 px-2.5 text-xs"
+                            onClick={() => void joinRoom(room.id)} disabled={isJoining}>
+                            {isJoining ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Join'}
+                          </Button>
+                        )}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-slate-800">{room.name}</p>
-                        {room.description && <p className="truncate text-[10px] text-slate-400">{room.description}</p>}
-                        <p className="text-[10px] text-slate-400">{room.memberCount} members</p>
-                      </div>
-                      {isMember ? (
-                        <Button size="sm" variant="outline" className="shrink-0 h-7 px-2.5 text-xs text-emerald-600 border-emerald-200"
-                          onClick={() => { setActiveRoomId(room.id); setShowBrowse(false); setBrowseSearch('') }}>
-                          <Check className="h-3 w-3 mr-1" />
-                          Open
-                        </Button>
-                      ) : (
-                        <Button size="sm" variant="gradient" className="shrink-0 h-7 px-2.5 text-xs"
-                          onClick={() => void joinRoom(room.id)} disabled={isJoining}>
-                          {isJoining ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Join'}
-                        </Button>
-                      )}
-                    </div>
-                  )
-                })}
-                {browseQuery.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <Search className="mb-2 h-8 w-8 text-slate-200" />
-                    <p className="text-sm font-medium text-slate-500">Search for a room</p>
-                    <p className="text-xs text-slate-400">Type a room name or topic above to find public rooms</p>
-                  </div>
-                )}
-                {browseQuery.length > 0 && browseRooms.length === 0 && (
-                  <p className="py-6 text-center text-sm text-slate-400">No rooms found for &quot;{browseSearch}&quot;</p>
-                )}
+                    )
+                  })
+                })()}
               </div>
             </ScrollArea>
             <Button variant="outline" size="sm" className="w-full" onClick={() => { setShowBrowse(false); setShowCreateRoom(true) }}>

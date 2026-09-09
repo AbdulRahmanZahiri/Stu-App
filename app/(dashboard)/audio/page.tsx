@@ -17,7 +17,7 @@ import type { AudioStudyItem, PodcastLine } from '@/lib/types'
 const EMPTY_ITEM: AudioStudyItem = {
   id: '__empty__',
   title: 'No episode selected',
-  status: 'failed',
+  status: 'ready',
   createdAt: new Date(0),
 }
 
@@ -139,8 +139,7 @@ export default function AudioStudyPage() {
   useEffect(() => {
     if (playing) {
       keepaliveRef.current = setInterval(() => {
-        if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.pause()
+        if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume()
         }
       }, 10_000)

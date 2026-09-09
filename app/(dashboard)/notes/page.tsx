@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import {
   FileText, Search, Upload, Eye, Download,
   Plus, Shield, Archive, Users, Clock,
-  Sparkles, Loader2, Check, AlertCircle,
+  Sparkles, Loader2, Check, AlertCircle, Pencil, Trash2,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -31,13 +31,15 @@ const labelConfig = {
 }
 
 export default function NotesPage() {
-  const { notes, courses, addNote } = useAppStore()
+  const { notes, courses, addNote, updateNote, deleteNote } = useAppStore()
   const { user, profile } = useAuth()
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState('all')
   const [viewNote, setViewNote] = useState<Note | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [editNote, setEditNote] = useState<Note | null>(null)
+  const [editForm, setEditForm] = useState({ title: '', content: '', courseId: '', tags: '' })
   const [aiSummary, setAiSummary] = useState<{ noteId: string; content: string } | null>(null)
   const [loadingSummary, setLoadingSummary] = useState<string | null>(null)
   const [summaryError, setSummaryError] = useState<string | null>(null)
@@ -46,6 +48,30 @@ export default function NotesPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  function openEdit(note: Note) {
+    setEditNote(note)
+    setEditForm({
+      title: note.title,
+      content: note.content ?? '',
+      courseId: note.courseId ?? '',
+      tags: note.tags?.join(', ') ?? '',
+    })
+  }
+
+  function saveEdit() {
+    if (!editNote || !editForm.title.trim()) return
+    const course = courses.find((c) => c.id === editForm.courseId)
+    updateNote(editNote.id, {
+      title: editForm.title.trim(),
+      content: editForm.content.trim(),
+      courseId: editForm.courseId || undefined,
+      courseCode: course?.code,
+      tags: editForm.tags.split(',').map((t) => t.trim()).filter(Boolean),
+    })
+    setEditNote(null)
+    toast.success('Note updated')
+  }
 
   const filtered = notes.filter((n) => {
     const matchSearch = !search ||
@@ -69,7 +95,7 @@ export default function NotesPage() {
       courseCode: course?.code,
       title: newNote.title.trim(),
       content: newNote.content.trim(),
-      excerpt: newNote.content.trim().slice(0, 120) + '...',
+      excerpt: newNote.content.trim().length > 120 ? newNote.content.trim().slice(0, 120) + '...' : newNote.content.trim(),
       type: 'personal',
       tags: newNote.tags.split(',').map((t) => t.trim()).filter(Boolean),
       status: 'draft',
@@ -88,39 +114,47 @@ export default function NotesPage() {
     if (!uploadFile || !newNote.title.trim()) return
     const course = courses.find((c) => c.id === newNote.courseId)
     setUploading(true)
-    let content = `Uploaded file: ${uploadFile.name}`
     try {
       const formData = new FormData()
       formData.append('file', uploadFile)
       const response = await fetch('/api/extract-pdf', { method: 'POST', body: formData })
-      const result = await response.json()
-      if (response.ok && typeof result.text === 'string') content = result.text
-    } catch {
-      // The original file is still stored even when text extraction is unavailable.
+      const result = await response.json().catch(() => ({ error: 'The server returned an invalid response.' })) as {
+        error?: string
+        text?: string
+      }
+      if (!response.ok) throw new Error(result.error || 'Could not extract text from this file.')
+      if (!result.text?.trim()) throw new Error('No readable text was found in this file.')
+
+      const content = result.text
+      const note: Note = {
+        id: crypto.randomUUID(),
+        authorId: user?.id ?? 'student-001',
+        authorName: profile?.name ?? 'Student',
+        courseId: newNote.courseId || undefined,
+        courseCode: course?.code,
+        title: newNote.title.trim(),
+        content,
+        excerpt: content.slice(0, 160),
+        type: 'personal',
+        tags: newNote.tags.split(',').map((t) => t.trim()).filter(Boolean),
+        status: 'draft',
+        isVerified: false,
+        viewCount: 0,
+        downloadCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      addNote(note, uploadFile)
+      setUploadFile(null)
+      setNewNote({ title: '', content: '', courseId: '', tags: '' })
+      setShowUpload(false)
+      if (fileRef.current) fileRef.current.value = ''
+      toast.success('Note imported successfully')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not import this file.')
+    } finally {
+      setUploading(false)
     }
-    const note: Note = {
-      id: crypto.randomUUID(),
-      authorId: user?.id ?? 'student-001',
-      authorName: profile?.name ?? 'Student',
-      courseId: newNote.courseId || undefined,
-      courseCode: course?.code,
-      title: newNote.title.trim(),
-      content,
-      excerpt: content.slice(0, 160),
-      type: 'personal',
-      tags: newNote.tags.split(',').map((t) => t.trim()).filter(Boolean),
-      status: 'draft',
-      isVerified: false,
-      viewCount: 0,
-      downloadCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-    addNote(note, uploadFile)
-    setUploadFile(null)
-    setNewNote({ title: '', content: '', courseId: '', tags: '' })
-    setShowUpload(false)
-    setUploading(false)
   }
 
   async function downloadNote(note: Note) {
@@ -223,7 +257,14 @@ export default function NotesPage() {
           <motion.div key={note.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: (i + 1) * 0.07 }}>
             <NoteCard
               note={note}
+              currentUserId={user?.id ?? 'student-001'}
               onView={() => { setViewNote(note); setAiSummary(null) }}
+              onEdit={() => openEdit(note)}
+              onDelete={() => {
+                if (!window.confirm(`Delete "${note.title}"? This cannot be undone.`)) return
+                deleteNote(note.id)
+                toast.success('Note deleted')
+              }}
               onAISummary={() => generateAISummary(note)}
               loadingSummary={loadingSummary === note.id}
               summaryError={summaryError === note.id}
@@ -273,7 +314,7 @@ export default function NotesPage() {
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button
                     variant="gradient-subtle"
                     size="sm"
@@ -284,6 +325,12 @@ export default function NotesPage() {
                     {loadingSummary === viewNote.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                     {aiSummary?.noteId === viewNote.id ? 'Regenerate Summary' : 'AI Summary'}
                   </Button>
+                  {viewNote.authorId === (user?.id ?? 'student-001') && (
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setViewNote(null); openEdit(viewNote) }}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={() => downloadNote(viewNote)}>
                     <Download className="h-3.5 w-3.5" />
                     Download
@@ -306,9 +353,10 @@ export default function NotesPage() {
             </div>
             <div>
               <Label className="text-xs font-medium mb-1.5 block">Course</Label>
-              <Select value={newNote.courseId} onValueChange={(v) => setNewNote((p) => ({ ...p, courseId: v }))}>
+              <Select value={newNote.courseId || '__none__'} onValueChange={(v) => setNewNote((p) => ({ ...p, courseId: v === '__none__' ? '' : v }))}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Select course (optional)" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="__none__">No Course</SelectItem>
                   {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -332,8 +380,46 @@ export default function NotesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Note Dialog */}
+      <Dialog open={!!editNote} onOpenChange={(o) => { if (!o) setEditNote(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Edit Note</DialogTitle></DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label className="text-xs font-medium mb-1.5 block">Title *</Label>
+              <Input placeholder="Note title..." value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} autoFocus />
+            </div>
+            <div>
+              <Label className="text-xs font-medium mb-1.5 block">Course</Label>
+              <Select value={editForm.courseId || '__none__'} onValueChange={(v) => setEditForm((p) => ({ ...p, courseId: v === '__none__' ? '' : v }))}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select course (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No Course</SelectItem>
+                  {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} — {c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-medium mb-1.5 block">Content *</Label>
+              <Textarea placeholder="Write your notes here..." value={editForm.content} onChange={(e) => setEditForm((p) => ({ ...p, content: e.target.value }))} className="min-h-[140px]" />
+            </div>
+            <div>
+              <Label className="text-xs font-medium mb-1.5 block">Tags (comma separated)</Label>
+              <Input placeholder="e.g. trees, algorithms, midterm" value={editForm.tags} onChange={(e) => setEditForm((p) => ({ ...p, tags: e.target.value }))} />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => setEditNote(null)}>Cancel</Button>
+              <Button variant="gradient" size="sm" className="flex-1" onClick={saveEdit} disabled={!editForm.title.trim()}>
+                <Check className="h-3.5 w-3.5" />
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Upload Note Dialog */}
-      <input ref={fileRef} type="file" accept=".pdf,.txt,.docx,.doc,.md" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} />
+      <input ref={fileRef} type="file" accept=".pdf,.txt,.docx,.md" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} />
       <Dialog open={showUpload} onOpenChange={setShowUpload}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Upload Note</DialogTitle></DialogHeader>
@@ -362,9 +448,10 @@ export default function NotesPage() {
             </div>
             <div>
               <Label className="text-xs font-medium mb-1.5 block">Course</Label>
-              <Select value={newNote.courseId} onValueChange={(v) => setNewNote((p) => ({ ...p, courseId: v }))}>
+              <Select value={newNote.courseId || '__none__'} onValueChange={(v) => setNewNote((p) => ({ ...p, courseId: v === '__none__' ? '' : v }))}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Select course (optional)" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="__none__">No Course</SelectItem>
                   {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -383,13 +470,17 @@ export default function NotesPage() {
   )
 }
 
-function NoteCard({ note, onView, onAISummary, loadingSummary, summaryError }: {
+function NoteCard({ note, currentUserId, onView, onEdit, onDelete, onAISummary, loadingSummary, summaryError }: {
   note: Note
+  currentUserId: string
   onView: () => void
+  onEdit: () => void
+  onDelete: () => void
   onAISummary: () => void
   loadingSummary: boolean
   summaryError: boolean
 }) {
+  const isOwner = note.authorId === currentUserId
   const labelKey = note.isVerified ? 'verified' : note.type === 'shared' ? 'student-uploaded' : note.status === 'archived' ? 'archived' : 'student-uploaded'
   const config = labelConfig[labelKey as keyof typeof labelConfig]
   const LabelIcon = config.icon
@@ -427,15 +518,26 @@ function NoteCard({ note, onView, onAISummary, loadingSummary, summaryError }: {
             {note.viewCount !== undefined && <span className="flex items-center gap-0.5 text-[10px] text-slate-400"><Eye className="h-3 w-3" />{note.viewCount}</span>}
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className={cn('mt-3 gap-2', isOwner ? 'grid grid-cols-4' : 'grid grid-cols-2')}>
           <Button variant="outline" size="sm" className="text-xs h-7" onClick={onView}>
             <Eye className="h-3 w-3 mr-1" />
-            View Note
+            View
           </Button>
+          {isOwner && (
+            <Button variant="outline" size="sm" className="text-xs h-7" onClick={onEdit}>
+              <Pencil className="h-3 w-3 mr-1" />
+              Edit
+            </Button>
+          )}
           <Button variant="gradient-subtle" size="sm" className="text-xs h-7 gap-1" onClick={onAISummary} disabled={loadingSummary}>
             {loadingSummary ? <Loader2 className="h-3 w-3 animate-spin" /> : summaryError ? <AlertCircle className="h-3 w-3 text-rose-500" /> : <Sparkles className="h-3 w-3" />}
-            AI Summary
+            AI
           </Button>
+          {isOwner && (
+            <Button variant="outline" size="sm" className="text-xs h-7 text-rose-500 hover:bg-rose-50 hover:text-rose-600 border-rose-100" onClick={onDelete}>
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

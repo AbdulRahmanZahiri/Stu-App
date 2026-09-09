@@ -1,13 +1,7 @@
-import Groq from 'groq-sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
 export const runtime = 'nodejs'
-
-let client: Groq | null = null
-function getClient() {
-  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  return client
-}
 
 export async function POST(req: NextRequest) {
   if (!process.env.GROQ_API_KEY) {
@@ -41,8 +35,8 @@ export async function POST(req: NextRequest) {
   const prompt = `Today: ${today.toLocaleDateString()}. Tasks (title|due|hours|type|priority):\n${taskSummary}\nEvents:\n${eventSummary || 'none'}\n\nReturn JSON with a "days" key containing an array of 7 days. Each day: {"day":"Mon Aug 25","date":"2026-08-25","sessions":[{"time":"2-4 PM","task":"...","goal":"...","hours":2}],"note":"tip"}. Max 4h/day. Prioritize exams.`
 
   try {
-    const res = await getClient().chat.completions.create({
-      model: 'qwen/qwen3.8-27b',
+    const res = await groqChat({
+      model: GROQ_MODEL,
       max_tokens: 1200,
       temperature: 0.3,
       response_format: { type: 'json_object' },
@@ -70,12 +64,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ days })
   } catch (err) {
     console.error('Schedule API error:', err)
-    const msg = err instanceof Error ? err.message : ''
+    const e = err as Error & { code?: string; retryAfter?: number }
+    if (e.code === 'RATE_LIMITED') {
+      return NextResponse.json({ error: e.message, retryAfter: e.retryAfter }, { status: 429 })
+    }
+    const msg = e.message ?? ''
     if (msg.includes('401') || msg.includes('Authentication')) {
       return NextResponse.json({ error: 'Groq API key is invalid or not set in Vercel.' }, { status: 500 })
-    }
-    if (msg.includes('429') || msg.includes('rate_limit')) {
-      return NextResponse.json({ error: 'Rate limit hit. Wait 30 seconds and try again.' }, { status: 500 })
     }
     return NextResponse.json({ error: 'Failed to generate schedule. Please try again.' }, { status: 500 })
   }

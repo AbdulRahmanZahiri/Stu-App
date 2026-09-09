@@ -210,7 +210,7 @@ export default function StudyPlannerPage() {
               <span className="text-xs font-semibold text-slate-500">Due This Week</span>
             </div>
             <p className="text-3xl font-black text-slate-800">
-              {tasks.filter(t => t.status !== 'completed' && t.dueDate && daysUntil(new Date(t.dueDate)) <= 7 && daysUntil(new Date(t.dueDate)) > 0).length}
+              {tasks.filter(t => t.status !== 'completed' && t.dueDate && daysUntil(new Date(t.dueDate)) <= 7 && daysUntil(new Date(t.dueDate)) >= 0).length}
             </p>
             <p className="text-[11px] text-slate-400 mt-1">tasks remaining</p>
           </CardContent>

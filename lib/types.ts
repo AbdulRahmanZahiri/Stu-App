@@ -199,7 +199,7 @@ export interface Resource {
 export interface ChatRoom {
   id: string
   name: string
-  type: 'course' | 'major' | 'general' | 'direct'
+  type: 'course' | 'major' | 'general' | 'direct' | 'faculty'
   description?: string
   courseCode?: string
   university?: string
@@ -219,7 +219,7 @@ export interface ChatMessage {
   senderName: string
   senderAvatar?: string
   content: string
-  type: 'text' | 'file' | 'image' | 'system'
+  type: 'text' | 'file' | 'image' | 'system' | 'question'
   fileUrl?: string
   fileName?: string
   fileSize?: number

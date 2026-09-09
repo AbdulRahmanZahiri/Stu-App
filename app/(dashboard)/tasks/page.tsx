@@ -26,6 +26,7 @@ const NO_COURSE_VALUE = '__no_course__'
 const BLANK_TASK = {
   title: '', courseId: '', type: 'assignment' as Task['type'],
   priority: 'medium' as Task['priority'], dueDate: '', estimatedHours: '',
+  status: 'not_started' as Task['status'],
 }
 
 const validFilters = new Set(['all', 'in_progress', 'today', 'overdue', 'completed'])
@@ -146,6 +147,8 @@ function TasksManager({
   }
 
   function deleteTask(id: string) {
+    const t = tasks.find((t) => t.id === id)
+    if (!window.confirm(`Delete "${t?.title ?? 'this task'}"?`)) return
     storeDeleteTask(id)
   }
 
@@ -163,6 +166,7 @@ function TasksManager({
       priority: task.priority,
       dueDate: task.dueDate ? toLocalDateTimeInputValue(new Date(task.dueDate)) : '',
       estimatedHours: task.estimatedHours?.toString() ?? '',
+      status: task.status === 'overdue' ? 'not_started' : task.status,
     })
     setEditTask(task)
     setShowAdd(true)
@@ -181,7 +185,8 @@ function TasksManager({
         type: form.type,
         priority: form.priority,
         dueDate: parsedDueDate,
-        status: editTask.status === 'overdue' && (!parsedDueDate || parsedDueDate.getTime() > Date.now()) ? 'not_started' : editTask.status,
+        status: form.status === 'completed' ? 'completed' : form.status === 'in_progress' ? 'in_progress' : (editTask.status === 'overdue' && (!parsedDueDate || parsedDueDate.getTime() > Date.now())) ? 'not_started' : 'not_started',
+        completedAt: form.status === 'completed' ? (editTask.completedAt ?? new Date()) : undefined,
         estimatedHours: form.estimatedHours ? parseFloat(form.estimatedHours) : undefined,
       })
     } else {
@@ -395,9 +400,24 @@ function TasksManager({
                 </Select>
               </div>
             </div>
-            <div>
-              <Label className="text-xs font-medium text-slate-700 mb-1.5 block">Estimated Hours</Label>
-              <Input type="number" placeholder="e.g. 2.5" min="0.5" step="0.5" value={form.estimatedHours} onChange={(e) => setForm((p) => ({ ...p, estimatedHours: e.target.value }))} className="h-9 text-sm" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-medium text-slate-700 mb-1.5 block">Estimated Hours</Label>
+                <Input type="number" placeholder="e.g. 2.5" min="0.5" step="0.5" value={form.estimatedHours} onChange={(e) => setForm((p) => ({ ...p, estimatedHours: e.target.value }))} className="h-9 text-sm" />
+              </div>
+              {editTask && (
+                <div>
+                  <Label className="text-xs font-medium text-slate-700 mb-1.5 block">Status</Label>
+                  <Select value={form.status} onValueChange={(v) => setForm((p) => ({ ...p, status: v as Task['status'] }))}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="not_started">Not Started</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <div className="flex gap-2 pt-2">
               <Button variant="outline" size="sm" className="flex-1" onClick={() => { setShowAdd(false); setEditTask(null) }}>Cancel</Button>

@@ -1,12 +1,12 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { format, formatDistanceToNow, isToday } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
 import {
-  BookOpen, CheckSquare, TrendingUp, Trophy,
-  ChevronRight, ChevronUp, ChevronDown,
+  BookOpen, TrendingUp,
+  ChevronRight,
   FileText, Clock, ArrowRight,
-  AlertCircle, CheckCircle2,
+  AlertCircle, CheckCircle2, Sparkles, PlusCircle, Upload, Brain,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,76 +25,18 @@ const fade = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut', delay: i * 0.06 } }),
 }
 
-// Simple SVG sparkline — no external libraries
-function Sparkline({ data, color }: { data: number[]; color: string }) {
-  const h = 36
-  const w = 80
-  const min = Math.min(...data)
-  const max = Math.max(...data)
-  const range = max - min || 1
-  const pts = data.map((v, i) => ({
-    x: (i / (data.length - 1)) * w,
-    y: h - ((v - min) / range) * h,
-  }))
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none">
-      <polyline points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
-        stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </svg>
-  )
-}
 
-// Weekly progress line chart
-function ProgressChart() {
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const thisWeek = [62, 71, 68, 76, 80, 78, 85]
-  const lastWeek = [50, 58, 63, 62, 70, 72, 75]
-  const w = 400; const h = 120
-  const minV = 40; const maxV = 100; const range = maxV - minV
-
-  const toPath = (data: number[]) =>
-    data.map((v, i) => {
-      const x = (i / (data.length - 1)) * (w - 24) + 12
-      const y = h - ((v - minV) / range) * (h - 16) - 8
-      return `${x},${y}`
-    }).join(' ')
-
-  return (
-    <div className="relative">
-      <svg width="100%" viewBox={`0 0 ${w} ${h + 24}`} className="overflow-visible">
-        {/* Grid lines */}
-        {[40, 55, 70, 85, 100].map((v) => {
-          const y = h - ((v - minV) / range) * (h - 16) - 8
-          return (
-            <g key={v}>
-              <line x1={0} y1={y} x2={w} y2={y} stroke="#F1F5F9" strokeWidth="1" />
-              <text x={-4} y={y + 4} fontSize="9" fill="#94A3B8" textAnchor="end">{v}%</text>
-            </g>
-          )
-        })}
-        {/* Last week (dashed) */}
-        <polyline points={toPath(lastWeek)} fill="none" stroke="#CBD5E1" strokeWidth="1.5"
-          strokeDasharray="4 3" strokeLinecap="round" strokeLinejoin="round" />
-        {/* This week */}
-        <polyline points={toPath(thisWeek)} fill="none" stroke="#059669" strokeWidth="2.5"
-          strokeLinecap="round" strokeLinejoin="round" />
-        {/* Day labels */}
-        {days.map((d, i) => {
-          const x = (i / (days.length - 1)) * (w - 24) + 12
-          return <text key={d} x={x} y={h + 20} fontSize="9" fill="#94A3B8" textAnchor="middle">{d}</text>
-        })}
-      </svg>
-      {/* Legend */}
-      <div className="mt-1 flex items-center gap-4">
-        <span className="flex items-center gap-1.5 text-[10px] text-slate-500">
-          <span className="h-0.5 w-4 rounded-full bg-emerald-600" /> This Week
-        </span>
-        <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-          <span className="h-px w-4 border-t border-dashed border-slate-300" /> Last Week
-        </span>
-      </div>
-    </div>
-  )
+function gradeLetterAndColor(pct: number): { letter: string; barColor: string; textColor: string } {
+  if (pct >= 90) return { letter: 'A+', barColor: '#10b981', textColor: 'text-emerald-600' }
+  if (pct >= 85) return { letter: 'A', barColor: '#10b981', textColor: 'text-emerald-600' }
+  if (pct >= 80) return { letter: 'A-', barColor: '#10b981', textColor: 'text-emerald-600' }
+  if (pct >= 75) return { letter: 'B+', barColor: '#3b82f6', textColor: 'text-blue-600' }
+  if (pct >= 70) return { letter: 'B', barColor: '#3b82f6', textColor: 'text-blue-600' }
+  if (pct >= 65) return { letter: 'B-', barColor: '#3b82f6', textColor: 'text-blue-600' }
+  if (pct >= 60) return { letter: 'C+', barColor: '#f59e0b', textColor: 'text-amber-600' }
+  if (pct >= 55) return { letter: 'C', barColor: '#f59e0b', textColor: 'text-amber-600' }
+  if (pct >= 50) return { letter: 'D', barColor: '#f97316', textColor: 'text-orange-600' }
+  return { letter: 'F', barColor: '#ef4444', textColor: 'text-rose-600' }
 }
 
 export default function DashboardPage() {
@@ -108,8 +50,7 @@ export default function DashboardPage() {
 
   const activeCourses = courses.filter((c) => c.status === 'active')
   const activeTasks = tasks.filter((t) => t.status !== 'completed')
-  const dueTodayCount = activeTasks.filter((t) => t.dueDate && isToday(new Date(t.dueDate))).length
-  const overdueCount = tasks.filter((task) => getEffectiveTaskStatus(task) === 'overdue').length
+const overdueCount = tasks.filter((task) => getEffectiveTaskStatus(task) === 'overdue').length
   const completedCount = tasks.filter((t) => t.status === 'completed').length
   const completionRate = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0
   const gradedCourses = activeCourses.filter((course) => course.currentGrade !== undefined)
@@ -130,38 +71,22 @@ export default function DashboardPage() {
     {
       title: 'Active Courses',
       value: String(activeCourses.length),
-      trend: `${activeCourses.length} enrolled`, trendUp: true,
       sub: profile?.semester || 'current term',
-      icon: BookOpen, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600',
-      sparkData: [3, 3, 4, 4, 5, 5, activeCourses.length],
-      sparkColor: '#059669',
     },
     {
-      title: 'Assignments',
+      title: 'Pending Tasks',
       value: String(activeTasks.length),
-      trend: `+${dueTodayCount} today`, trendUp: dueTodayCount === 0,
       sub: overdueCount > 0 ? `${overdueCount} overdue` : 'None overdue',
-      icon: CheckSquare, iconBg: 'bg-amber-50', iconColor: 'text-amber-600',
-      sparkData: [8, 9, 7, 10, 9, activeTasks.length + 2, activeTasks.length],
-      sparkColor: '#D97706',
     },
     {
       title: 'Avg Grade',
       value: `${Math.round(avgGrade)}%`,
-      trend: `${gradedCourses.length} graded`, trendUp: avgGrade >= 60,
-      sub: (profile?.gpa ?? 0) >= 3.7 ? "Dean's List track" : 'Good Standing',
-      icon: Trophy, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600',
-      sparkData: [70, 72, 74, 76, 75, 78, Math.round(avgGrade)],
-      sparkColor: '#059669',
+      sub: gradedCourses.length > 0 ? `${gradedCourses.length} course${gradedCourses.length > 1 ? 's' : ''} graded` : 'No grades yet',
     },
     {
-      title: 'Completion Rate',
+      title: 'Completion',
       value: `${completionRate}%`,
-      trend: `${completedCount}/${tasks.length}`, trendUp: completionRate >= 50,
-      sub: `${completedCount} tasks done`,
-      icon: TrendingUp, iconBg: 'bg-sky-50', iconColor: 'text-sky-600',
-      sparkData: [55, 58, 60, 63, 65, 68, completionRate],
-      sparkColor: '#0284C7',
+      sub: `${completedCount} of ${tasks.length} tasks done`,
     },
   ]
 
@@ -225,7 +150,7 @@ export default function DashboardPage() {
         className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
-            {greeting}, {firstName}! 👋
+            {greeting}, {firstName}!
           </h1>
           <p className="mt-0.5 text-sm text-slate-500">
             {format(now, "MMMM d, yyyy")} · {profile?.semester || 'Current semester'}
@@ -237,6 +162,41 @@ export default function DashboardPage() {
           </span>
         </div>
       </motion.div>
+
+      {/* ── Get Started banner (new accounts only) ─────────────────── */}
+      {activeCourses.length === 0 && (
+        <motion.div custom={0} variants={fade} initial="hidden" animate="show"
+          className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 to-green-500 p-px shadow-lg shadow-emerald-500/20">
+          <div className="rounded-[15px] bg-gradient-to-br from-emerald-600/90 to-green-500/90 px-6 py-5">
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-bold text-white">Welcome to ScholarFlow! Let&apos;s get you set up.</h2>
+                <p className="mt-0.5 text-sm text-white/75">Add your courses, upload your syllabus, and let AI organize your semester in minutes.</p>
+                <div className="mt-4 flex flex-wrap gap-2.5">
+                  <Link href="/courses">
+                    <button className="flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-emerald-700 shadow hover:bg-emerald-50 transition-colors">
+                      <PlusCircle className="h-3.5 w-3.5" /> Add Courses
+                    </button>
+                  </Link>
+                  <Link href="/courses">
+                    <button className="flex items-center gap-1.5 rounded-lg bg-white/20 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/30 transition-colors">
+                      <Upload className="h-3.5 w-3.5" /> Import Syllabus
+                    </button>
+                  </Link>
+                  <Link href="/ai">
+                    <button className="flex items-center gap-1.5 rounded-lg bg-white/20 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/30 transition-colors">
+                      <Brain className="h-3.5 w-3.5" /> Ask AI Anything
+                    </button>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Streak + conflict banners ───────────────────────────────── */}
       <div className="mb-4 flex flex-col gap-2">
@@ -273,22 +233,10 @@ export default function DashboardPage() {
         {statCards.map((s, i) => (
           <motion.div key={s.title} custom={i} variants={fade} initial="hidden" animate="show">
             <Card className="border border-slate-100 shadow-sm">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', s.iconBg)}>
-                    <s.icon className={cn('h-4.5 w-4.5', s.iconColor)} />
-                  </div>
-                  <Sparkline data={s.sparkData} color={s.sparkColor} />
-                </div>
-                <p className="text-xs font-medium text-slate-500">{s.title}</p>
-                <p className="mt-0.5 text-2xl font-extrabold text-slate-900">{s.value}</p>
-                <div className="mt-1 flex items-center gap-1.5">
-                  {s.trendUp
-                    ? <ChevronUp className="h-3 w-3 text-emerald-500 flex-shrink-0" />
-                    : <ChevronDown className="h-3 w-3 text-rose-500 flex-shrink-0" />}
-                  <span className={cn('text-[11px] font-semibold', s.trendUp ? 'text-emerald-600' : 'text-rose-500')}>{s.trend}</span>
-                  <span className="text-[11px] text-slate-400">{s.sub}</span>
-                </div>
+              <CardContent className="p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{s.title}</p>
+                <p className="mt-2 text-3xl font-extrabold text-slate-900" style={{ fontVariantNumeric: 'tabular-nums' }}>{s.value}</p>
+                <p className="mt-2 text-[11px] text-slate-400">{s.sub}</p>
               </CardContent>
             </Card>
           </motion.div>
@@ -298,15 +246,59 @@ export default function DashboardPage() {
       {/* ── Main grid ───────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
 
-        {/* Progress Chart */}
+        {/* Course Grade Snapshot */}
         <motion.div custom={4} variants={fade} initial="hidden" animate="show" className="lg:col-span-2">
           <Card className="border border-slate-100 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-semibold text-slate-800">Grade Progress</CardTitle>
-              <span className="text-[11px] text-slate-400">This Week vs Last Week</span>
+              <CardTitle className="text-sm font-semibold text-slate-800">Course Grades</CardTitle>
+              <Link href="/grades">
+                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-emerald-600 hover:text-emerald-700 px-2">
+                  Calculator <ChevronRight className="h-3 w-3" />
+                </Button>
+              </Link>
             </CardHeader>
-            <CardContent className="px-5 pb-5 pl-8">
-              <ProgressChart />
+            <CardContent className="px-5 pb-5">
+              {gradedCourses.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <TrendingUp className="h-8 w-8 text-slate-200 mb-2" />
+                  <p className="text-xs font-medium text-slate-500">No grades recorded yet</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Enter grades in the Grade Calculator to see your snapshot here.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {gradedCourses.map((course) => {
+                    const pct = course.currentGrade ?? 0
+                    const { letter, barColor, textColor } = gradeLetterAndColor(pct)
+                    return (
+                      <div key={course.id} className="flex items-center gap-3">
+                        <div className="w-20 shrink-0 text-right">
+                          <span className="text-[11px] font-bold text-slate-600 truncate">{course.code}</span>
+                        </div>
+                        <div className="flex-1 relative h-5 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, backgroundColor: barColor + 'cc' }}
+                          />
+                          <span className="absolute inset-0 flex items-center pl-2.5 text-[10px] font-bold text-white mix-blend-overlay">
+                            {pct.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-9 shrink-0 text-center">
+                          <span className={cn('text-[11px] font-extrabold', textColor)}>{letter}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div className="mt-2 flex items-center gap-4 pt-2 border-t border-slate-50">
+                    {[{ label: 'A', color: '#10b981' }, { label: 'B', color: '#3b82f6' }, { label: 'C', color: '#f59e0b' }, { label: 'D/F', color: '#ef4444' }].map((g) => (
+                      <span key={g.label} className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+                        {g.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>
@@ -470,31 +462,46 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {courses.map((course) => (
-                  <Link key={course.id} href="/courses">
-                    <div className="group rounded-xl border border-slate-100 p-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer bg-white"
-                      style={{ borderLeftColor: course.color, borderLeftWidth: 3 }}>
-                      <div className="flex items-start justify-between mb-1.5">
-                        <div>
-                          <p className="text-[11px] font-bold" style={{ color: course.color }}>{course.code}</p>
-                          <p className="text-[12px] font-semibold text-slate-800 leading-tight mt-0.5">{course.name}</p>
-                        </div>
-                        {course.currentGrade !== undefined && (
-                          <span className={cn('text-sm font-bold', getGradeColor(course.currentGrade))}>{course.currentGrade}%</span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mb-2">{course.instructor}</p>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {course.syllabusUploaded
-                          ? <Badge variant="success" className="text-[9px] py-0">Syllabus ✓</Badge>
-                          : <Badge variant="warning" className="text-[9px] py-0">No syllabus</Badge>}
-                        <Badge variant="secondary" className="text-[9px] py-0">{course.credits} cr</Badge>
-                      </div>
-                    </div>
+              {courses.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50">
+                    <BookOpen className="h-6 w-6 text-emerald-500" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700">No courses yet</p>
+                  <p className="mt-1 text-xs text-slate-400">Add your courses and upload your syllabus to get started.</p>
+                  <Link href="/courses">
+                    <Button size="sm" className="mt-4 gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 text-xs h-8">
+                      <PlusCircle className="h-3.5 w-3.5" /> Add Your First Course
+                    </Button>
                   </Link>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {courses.map((course) => (
+                    <Link key={course.id} href="/courses">
+                      <div className="group rounded-xl border border-slate-100 p-4 transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer bg-white"
+                        style={{ borderLeftColor: course.color, borderLeftWidth: 3 }}>
+                        <div className="flex items-start justify-between mb-1.5">
+                          <div>
+                            <p className="text-[11px] font-bold" style={{ color: course.color }}>{course.code}</p>
+                            <p className="text-[12px] font-semibold text-slate-800 leading-tight mt-0.5">{course.name}</p>
+                          </div>
+                          {course.currentGrade !== undefined && (
+                            <span className={cn('text-sm font-bold', getGradeColor(course.currentGrade))}>{course.currentGrade}%</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mb-2">{course.instructor}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {course.syllabusUploaded
+                            ? <Badge variant="success" className="text-[9px] py-0">Syllabus ✓</Badge>
+                            : <Badge variant="warning" className="text-[9px] py-0">No syllabus</Badge>}
+                          <Badge variant="secondary" className="text-[9px] py-0">{course.credits} cr</Badge>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>

@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/lib/app-store'
 import { useAuth } from '@/lib/auth-context'
 import { toast } from 'sonner'
-import type { Course, Task } from '@/lib/types'
+import type { CalendarEvent, Course, Task } from '@/lib/types'
 
 const COURSE_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
 
@@ -41,7 +41,7 @@ interface ParsedSyllabus {
 }
 
 export default function CoursesPage() {
-  const { courses, addCourse: storeAddCourse, deleteCourse, saveSyllabusImport } = useAppStore()
+  const { courses, addCourse: storeAddCourse, deleteCourse, saveSyllabusImport, addCalendarEvent } = useAppStore()
   const { user, profile } = useAuth()
   const [uploadingCourse, setUploadingCourse] = useState<Course | null>(null)
   const [uploadState, setUploadState] = useState<UploadState>('idle')
@@ -181,35 +181,39 @@ export default function CoursesPage() {
   async function confirmSave() {
     if (!uploadingCourse || !parsed) return
 
-    const newTasks: Task[] = (parsed.keyDates ?? [])
+    // Sort key dates chronologically before processing
+    const sortedDates = [...(parsed.keyDates ?? [])]
       .filter((kd) => {
         if (!kd.title || !kd.date) return false
         const d = new Date(kd.date)
-        return !isNaN(d.getTime())  // skip dates the AI made up like "Week 5" or "TBD"
+        return !isNaN(d.getTime())
       })
-      .map((kd) => {
-        const t = kd.title.toLowerCase()
-        const isExam = t.includes('exam') || t.includes('midterm') || t.includes('final')
-        const isQuiz = t.includes('quiz') || t.includes('test')
-        const isLab = t.includes('lab')
-        const isProject = t.includes('project') || t.includes('presentation') || t.includes('report')
-        const type: Task['type'] = isExam ? 'exam' : isQuiz ? 'quiz' : isLab ? 'assignment' : isProject ? 'assignment' : 'assignment'
-        const priority: Task['priority'] = isExam ? 'high' : isProject ? 'high' : isQuiz ? 'medium' : 'medium'
-        return {
-          id: crypto.randomUUID(),
-          studentId: user?.id ?? '',
-          courseId: uploadingCourse.id,
-          title: kd.title,
-          type,
-          status: 'not_started' as Task['status'],
-          priority,
-          dueDate: new Date(kd.date),
-          courseCode: uploadingCourse.code,
-          courseColor: uploadingCourse.color,
-          courseName: uploadingCourse.name,
-          tags: ['syllabus-import'],
-        }
-      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const newTasks: Task[] = sortedDates.map((kd) => {
+      const t = kd.title.toLowerCase()
+      const isExam = t.includes('exam') || t.includes('midterm') || t.includes('final')
+      const isQuiz = t.includes('quiz') || t.includes('test')
+      const isLab = t.includes('lab') || t.includes('laboratory')
+      const isProject = t.includes('project') || t.includes('presentation') || t.includes('report') || t.includes('poster')
+      const isReading = t.includes('reading') || t.includes('chapter')
+      const type: Task['type'] = isExam ? 'exam' : isQuiz ? 'quiz' : isLab ? 'lab' : isProject ? 'project' : isReading ? 'other' : 'assignment'
+      const priority: Task['priority'] = isExam ? 'high' : isProject ? 'high' : isQuiz ? 'medium' : 'medium'
+      return {
+        id: crypto.randomUUID(),
+        studentId: user?.id ?? '',
+        courseId: uploadingCourse.id,
+        title: kd.title,
+        type,
+        status: 'not_started' as Task['status'],
+        priority,
+        dueDate: new Date(kd.date),
+        courseCode: uploadingCourse.code,
+        courseColor: uploadingCourse.color,
+        courseName: uploadingCourse.name,
+        tags: ['syllabus-import'],
+      }
+    })
 
     setSaving(true)
     try {
@@ -221,6 +225,31 @@ export default function CoursesPage() {
         gradingBreakdown: parsed.gradingBreakdown ?? [],
         tasks: newTasks,
       })
+
+      // Add exam and major deadline dates to calendar
+      const calendarWorthy = sortedDates.filter((kd) => {
+        const t = kd.title.toLowerCase()
+        return t.includes('exam') || t.includes('midterm') || t.includes('final') ||
+          t.includes('quiz') || t.includes('project') || t.includes('presentation') ||
+          t.includes('deadline') || t.includes('due')
+      })
+      for (const kd of calendarWorthy) {
+        const t = kd.title.toLowerCase()
+        const calType: CalendarEvent['type'] = (t.includes('exam') || t.includes('midterm') || t.includes('final'))
+          ? 'exam' : 'deadline'
+        addCalendarEvent({
+          id: crypto.randomUUID(),
+          studentId: user?.id ?? '',
+          courseId: uploadingCourse.id,
+          courseCode: uploadingCourse.code,
+          title: `${uploadingCourse.code} – ${kd.title}`,
+          type: calType,
+          startDate: new Date(kd.date),
+          allDay: true,
+          color: uploadingCourse.color,
+        })
+      }
+
       if (newTasks.length > 0) {
         toast.success(`Syllabus saved! Added ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} from ${uploadingCourse.code}`)
       } else {
@@ -426,25 +455,27 @@ export default function CoursesPage() {
             </div>
           )}
 
-          {/* DONE — results */}
+          {/* DONE — results: scrollable body + pinned footer */}
           {uploadState === 'done' && parsed && (
-            <div>
-              <div className="mb-4 flex items-center gap-3 rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
-                <CheckCircle2 className="h-8 w-8 text-emerald-500 shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-emerald-800">Syllabus parsed successfully!</p>
-                  {parsed.summary && <p className="text-xs text-emerald-600 mt-0.5">{parsed.summary}</p>}
-                </div>
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 'calc(80vh - 80px)' }}>
 
-              {parseWarning && (
-                <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{parseWarning}</span>
+              {/* Scrollable content */}
+              <div style={{ overflowY: 'auto', flex: 1 }} className="space-y-3 pr-1">
+                <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-800">Syllabus parsed successfully!</p>
+                    {parsed.summary && <p className="text-xs text-emerald-600 mt-0.5">{parsed.summary}</p>}
+                  </div>
                 </div>
-              )}
 
-              <div className="space-y-3">
+                {parseWarning && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{parseWarning}</span>
+                  </div>
+                )}
+
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
@@ -491,32 +522,44 @@ export default function CoursesPage() {
                   </div>
                 )}
 
-                {/* Key dates */}
+                {/* Key dates — sorted by date */}
                 {parsed.keyDates.length > 0 && (
                   <div className="rounded-xl border border-slate-100 p-4">
                     <p className="text-xs font-semibold text-slate-500 mb-2">
                       Key Dates &amp; Tasks ({parsed.keyDates.length})
                     </p>
-                    <div className="max-h-48 overflow-y-auto space-y-0.5">
-                      {parsed.keyDates.map((d, i) => (
-                        <div key={i} className="flex items-center justify-between py-1 border-b border-slate-50 last:border-0">
-                          <span className="text-sm text-slate-700 flex-1 min-w-0 truncate pr-2">{d.title}</span>
-                          <span className="text-xs text-slate-400 shrink-0">{new Date(d.date).toLocaleDateString()}</span>
-                        </div>
-                      ))}
+                    <div className="space-y-0.5">
+                      {[...parsed.keyDates]
+                        .filter((d) => d.date && !isNaN(new Date(d.date).getTime()))
+                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .map((d, i) => {
+                          const t = d.title.toLowerCase()
+                          const isExam = t.includes('exam') || t.includes('midterm') || t.includes('final')
+                          const isQuiz = t.includes('quiz') || t.includes('test')
+                          return (
+                            <div key={i} className="flex items-center justify-between py-1 border-b border-slate-50 last:border-0">
+                              <span className={cn(
+                                'text-sm flex-1 min-w-0 truncate pr-2',
+                                isExam ? 'text-rose-600 font-semibold' : isQuiz ? 'text-amber-600 font-medium' : 'text-slate-700'
+                              )}>{d.title}</span>
+                              <span className="text-xs text-slate-400 shrink-0">{new Date(d.date).toLocaleDateString()}</span>
+                            </div>
+                          )
+                        })}
                     </div>
                   </div>
                 )}
+              </div>
 
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={resetDialog}>
-                    Close
-                  </Button>
-                  <Button variant="gradient" size="sm" className="flex-1" onClick={confirmSave} disabled={saving}>
-                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                    {saving ? 'Saving...' : 'Confirm & Save'}
-                  </Button>
-                </div>
+              {/* Pinned footer — always visible */}
+              <div className="flex gap-2 pt-3 mt-2 border-t border-slate-100" style={{ flexShrink: 0 }}>
+                <Button variant="outline" size="sm" className="flex-1" onClick={resetDialog}>
+                  Close
+                </Button>
+                <Button variant="gradient" size="sm" className="flex-1" onClick={confirmSave} disabled={saving}>
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {saving ? 'Saving...' : 'Confirm & Save'}
+                </Button>
               </div>
             </div>
           )}

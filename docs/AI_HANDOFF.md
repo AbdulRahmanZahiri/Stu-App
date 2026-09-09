@@ -13,7 +13,10 @@ live chat or a lock service.
 
 ## Active Work
 
-- None.
+- 2026-09-01 — Codex is repairing shared document extraction used by Podcast,
+  Courses, Notes, and Flashcards. Owned files: `app/api/extract-pdf/route.ts`,
+  `app/api/podcast/route.ts`, `app/(dashboard)/notes/page.tsx`, `package.json`,
+  `package-lock.json`, `next.config.ts`, `README.md`, and `.nvmrc`.
 
 ## Completed Work
 

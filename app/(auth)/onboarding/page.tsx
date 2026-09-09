@@ -29,10 +29,44 @@ const universities = [
 ]
 
 const majors = [
-  'Computer Science', 'Software Engineering', 'Electrical Engineering',
-  'Mechanical Engineering', 'Business Administration', 'Economics',
-  'Mathematics', 'Physics', 'Biology', 'Chemistry',
-  'Psychology', 'English Literature', 'Political Science', 'Other',
+  // Sciences
+  'Biology', 'Biochemistry', 'Bioinformatics', 'Biophysics', 'Biotechnology',
+  'Chemistry', 'Earth Sciences', 'Environmental Science', 'Geology',
+  'Marine Biology', 'Mathematics', 'Neuroscience', 'Physics', 'Statistics',
+  // Engineering & Technology
+  'Aerospace Engineering', 'Biomedical Engineering', 'Chemical Engineering',
+  'Civil Engineering', 'Computer Engineering', 'Computer Science',
+  'Electrical Engineering', 'Environmental Engineering', 'Industrial Engineering',
+  'Mechanical Engineering', 'Mining Engineering', 'Ocean Engineering',
+  'Petroleum Engineering', 'Software Engineering', 'Systems Engineering',
+  // Health & Medicine
+  'Dentistry', 'Kinesiology', 'Medicine', 'Midwifery', 'Nursing',
+  'Nutrition & Dietetics', 'Occupational Therapy', 'Pharmacy',
+  'Physical Therapy', 'Public Health', 'Radiologic Technology',
+  'Respiratory Therapy', 'Speech-Language Pathology',
+  // Business & Economics
+  'Accounting', 'Business Administration', 'Economics', 'Finance',
+  'Human Resources Management', 'International Business',
+  'Marketing', 'Operations Management', 'Supply Chain Management',
+  // Social Sciences
+  'Anthropology', 'Archaeology', 'Criminology', 'Geography',
+  'Indigenous Studies', 'International Relations', 'Political Science',
+  'Psychology', 'Public Administration', 'Public Policy',
+  'Social Work', 'Sociology', 'Urban Planning',
+  // Arts & Humanities
+  'Art History', 'Classical Studies', 'Communication Studies',
+  'Creative Writing', 'Cultural Studies', 'English Literature',
+  'Film Studies', 'Fine Arts', 'History', 'Journalism',
+  'Linguistics', 'Media Studies', 'Modern Languages',
+  'Music', 'Philosophy', 'Religious Studies', 'Theatre',
+  // Education & Law
+  'Early Childhood Education', 'Education', 'Law',
+  'Library Science', 'Special Education',
+  // Design & Architecture
+  'Architecture', 'Fashion Design', 'Graphic Design',
+  'Interior Design', 'Landscape Architecture',
+  // Other
+  'Other',
 ]
 
 const goals = [
@@ -361,7 +395,7 @@ export default function OnboardingPage() {
                           <SelectValue placeholder="Term" />
                         </SelectTrigger>
                         <SelectContent>
-                          {['Fall 2025','Winter 2026','Summer 2026','Fall 2026'].map((s) => (
+                          {['Fall 2026','Winter 2027','Summer 2027','Fall 2027'].map((s) => (
                             <SelectItem key={s} value={s}>{s}</SelectItem>
                           ))}
                         </SelectContent>

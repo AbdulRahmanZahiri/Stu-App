@@ -1,13 +1,7 @@
-import Groq from 'groq-sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
 export const runtime = 'nodejs'
-
-let client: Groq | null = null
-function getClient(): Groq {
-  if (!client) client = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  return client
-}
 
 const MAX_SOURCE = 12_000
 
@@ -17,6 +11,7 @@ export async function POST(req: NextRequest) {
   }
 
   let body: unknown
+
   try { body = await req.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
@@ -32,8 +27,8 @@ export async function POST(req: NextRequest) {
   const episodeTitle = typeof title === 'string' && title.trim() ? title.trim() : 'Study Material'
 
   try {
-    const completion = await getClient().chat.completions.create({
-      model: 'qwen/qwen3.8-27b',
+    const completion = await groqChat({
+      model: GROQ_MODEL,
       temperature: 0.2,
       max_tokens: 2500,
       response_format: { type: 'json_object' },
@@ -86,10 +81,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ cards, title: episodeTitle })
   } catch (error) {
     console.error('Flashcard generation error:', error)
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('429') || msg.includes('rate_limit')) {
-      return NextResponse.json({ error: 'Rate limit hit. Wait 30 seconds and try again.' }, { status: 429 })
+    const err = error as Error & { code?: string; retryAfter?: number }
+    if (err.code === 'RATE_LIMITED') {
+      return NextResponse.json({ error: err.message, retryAfter: err.retryAfter }, { status: 429 })
     }
+    const msg = err.message ?? ''
     if (msg.includes('401') || msg.includes('Authentication')) {
       return NextResponse.json({ error: 'AI API key is invalid.' }, { status: 500 })
     }

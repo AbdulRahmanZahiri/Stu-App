@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Sparkles, Send, BookOpen, FileText, BrainCircuit,
@@ -12,15 +12,14 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getInitials, cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
+import { useAppStore } from '@/lib/app-store'
 import type { AIMessage } from '@/lib/types'
 
-const quickPrompts = [
-  { icon: FileText, label: 'Summarize COMP 2007 notes', color: 'text-emerald-600' },
+const STATIC_PROMPTS = [
   { icon: BrainCircuit, label: 'Create a study plan for finals', color: 'text-green-600' },
-  { icon: ListChecks, label: 'Generate quiz questions for Data Structures', color: 'text-blue-600' },
-  { icon: BookOpen, label: 'Explain eigenvalues simply', color: 'text-sky-600' },
-  { icon: Zap, label: 'Create MATH 2050 flashcards', color: 'text-amber-600' },
-  { icon: Sparkles, label: 'Review my essay structure for ENGL 1110', color: 'text-emerald-600' },
+  { icon: ListChecks, label: 'Generate quiz questions for my upcoming exam', color: 'text-blue-600' },
+  { icon: BookOpen, label: 'Explain a concept I find difficult', color: 'text-sky-600' },
+  { icon: Sparkles, label: 'Help me outline an essay', color: 'text-emerald-600' },
 ]
 
 const WELCOME: AIMessage = {
@@ -94,6 +93,25 @@ function renderBold(text: string): React.ReactNode {
 
 export default function AIAssistantPage() {
   const { profile } = useAuth()
+  const { courses } = useAppStore()
+
+  const quickPrompts = useMemo(() => {
+    const activeCourses = courses.filter((c) => c.status === 'active')
+    if (activeCourses.length === 0) return STATIC_PROMPTS
+    const n = activeCourses.length
+    const c1 = activeCourses[0]
+    const c2 = activeCourses[n > 1 ? 1 : 0]
+    const c3 = activeCourses[n > 2 ? 2 : 0]
+    return [
+      { icon: FileText, label: `Summarize ${c1.code || c1.name} notes`, color: 'text-emerald-600' },
+      { icon: BrainCircuit, label: 'Create a study plan for finals', color: 'text-green-600' },
+      { icon: ListChecks, label: `Generate quiz questions for ${c2.code || c2.name}`, color: 'text-blue-600' },
+      { icon: BookOpen, label: 'Explain a concept I find difficult', color: 'text-sky-600' },
+      { icon: Zap, label: `Create ${c3.code || c3.name} flashcards`, color: 'text-amber-600' },
+      { icon: Sparkles, label: 'Help me outline an essay', color: 'text-emerald-600' },
+    ]
+  }, [courses])
+
   const [messages, setMessages] = useState<AIMessage[]>([WELCOME])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -148,13 +166,14 @@ export default function AIAssistantPage() {
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
-      let full = ''
+      const buf = { text: '' }
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        full += decoder.decode(value, { stream: true })
+        buf.text += decoder.decode(value, { stream: true })
+        const snapshot = buf.text
         setMessages((prev) =>
-          prev.map((m) => (m.id === aiMsgId ? { ...m, content: full } : m))
+          prev.map((m) => (m.id === aiMsgId ? { ...m, content: snapshot } : m))
         )
       }
     } catch (err) {

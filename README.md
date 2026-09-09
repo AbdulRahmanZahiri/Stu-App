@@ -18,17 +18,18 @@ Supabase-backed data; demo records are never written into an authenticated accou
 
 ## Requirements
 
-- Node.js 20.19+, 22.13+, or 24+
+- Node.js 24 LTS
 - npm
 - A Supabase project
 - A Groq API key for AI features
 
-Node.js 23 is not supported by the current ESLint toolchain. Use an even-numbered
-LTS release such as Node.js 22.
+The PDF extractor and Vercel deployment are pinned to Node.js 24. If you use
+`nvm`, run `nvm use` before installing dependencies.
 
 ## Local Setup
 
 ```bash
+nvm use
 npm install
 cp .env.example .env.local
 npm run dev
