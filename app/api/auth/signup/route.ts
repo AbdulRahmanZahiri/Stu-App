@@ -62,8 +62,20 @@ export async function POST(req: NextRequest) {
     options: { data: userMeta },
   })
 
-  if (error || !data.user) {
-    return NextResponse.json({ error: error?.message ?? 'Failed to create account' }, { status: 400 })
+  if (error) {
+    // Supabase free-tier SMTP is rate-limited. Surface a clear message instead of
+    // the raw Supabase error so the user knows what to do.
+    if (/sending confirmation email|email.*rate|smtp/i.test(error.message)) {
+      return NextResponse.json(
+        { error: 'Account created but the confirmation email could not be sent — Supabase email limits reached. Ask your admin to disable email confirmation or configure a custom SMTP provider.' },
+        { status: 503 },
+      )
+    }
+    return NextResponse.json({ error: error.message ?? 'Failed to create account' }, { status: 400 })
+  }
+
+  if (!data.user) {
+    return NextResponse.json({ error: 'Failed to create account' }, { status: 400 })
   }
 
   return NextResponse.json({ userId: data.user.id })
