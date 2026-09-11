@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/lib/app-store'
 import { useAuth } from '@/lib/auth-context'
+import { extractDocumentText } from '@/lib/client-document-extractor'
 import { toast } from 'sonner'
 import type { CalendarEvent, Course, Task } from '@/lib/types'
 
@@ -124,19 +125,7 @@ export default function CoursesPage() {
     }
 
     try {
-      let text: string
-
-      if (file.type === 'application/pdf' || ext === 'pdf' || ext === 'docx') {
-        const form = new FormData()
-        form.append('file', file)
-        const res = await fetch('/api/extract-pdf', { method: 'POST', body: form })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Failed to extract PDF text')
-        text = data.text as string
-      } else {
-        text = await readFileAsText(file)
-      }
-
+      const text = (await extractDocumentText(file)).text
       await parseSyllabusText(text, file.name)
     } catch (err) {
       setParseError(err instanceof Error ? err.message : 'Could not read file')
@@ -154,15 +143,6 @@ export default function CoursesPage() {
     setSourceFile(null)
     setUploadState('reading')
     await parseSyllabusText(pasteText.trim(), uploadingCourse?.code ?? 'syllabus')
-  }
-
-  function readFileAsText(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve(e.target?.result as string)
-      reader.onerror = () => reject(new Error('Could not read file'))
-      reader.readAsText(file)
-    })
   }
 
   function resetDialog() {

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { CheckCircle2, XCircle, Loader2, RefreshCw, Zap, Play } from 'lucide-react'
+import { extractDocumentText } from '@/lib/client-document-extractor'
 import { supabase } from '@/lib/supabase'
 
 type Status = 'idle' | 'loading' | 'ok' | 'error'
@@ -24,6 +25,36 @@ const SAMPLE_TASKS = [
   { title: 'Assignment 1', dueDate: new Date(Date.now() + 3 * 86400000).toISOString(), estimatedHours: 3, type: 'assignment', priority: 'high' },
   { title: 'Midterm Exam', dueDate: new Date(Date.now() + 7 * 86400000).toISOString(), estimatedHours: 5, type: 'exam', priority: 'urgent' },
 ]
+
+function createPdfTestFile(): File {
+  const stream = [
+    'BT',
+    '/F1 12 Tf',
+    '72 720 Td',
+    '(ScholarFlow browser PDF extraction health check with enough selectable text for validation.) Tj',
+    'ET',
+  ].join('\n')
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ]
+
+  let pdf = '%PDF-1.4\n'
+  const offsets = objects.map((object) => {
+    const offset = pdf.length
+    pdf += object
+    return offset
+  })
+  const xrefOffset = pdf.length
+  pdf += 'xref\n0 6\n0000000000 65535 f \n'
+  pdf += offsets.map((offset) => `${offset.toString().padStart(10, '0')} 00000 n \n`).join('')
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`
+
+  return new File([pdf], 'status-check.pdf', { type: 'application/pdf' })
+}
 
 export default function StatusPage() {
   const [results, setResults] = useState<Record<string, ServiceResult>>({
@@ -140,15 +171,12 @@ export default function StatusPage() {
     set('pdf', { status: 'loading', message: 'Testing PDF extractor…' })
     const t = Date.now()
     try {
-      // Test with a minimal plain text file to verify the endpoint responds
-      const blob = new Blob(['Hello world test file for ScholarFlow status check.'], { type: 'text/plain' })
-      const file = new File([blob], 'test.txt', { type: 'text/plain' })
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch('/api/extract-pdf', { method: 'POST', body: fd })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || res.statusText)
-      set('pdf', { status: 'ok', message: `Extracted ${d.text?.length ?? 0} characters`, ms: Date.now() - t })
+      const result = await extractDocumentText(createPdfTestFile())
+      set('pdf', {
+        status: 'ok',
+        message: `Extracted ${result.characters} characters from ${result.pages ?? 0}-page PDF`,
+        ms: Date.now() - t,
+      })
     } catch (e) {
       set('pdf', { status: 'error', message: e instanceof Error ? e.message : 'Failed', ms: Date.now() - t })
     }
@@ -171,7 +199,7 @@ export default function StatusPage() {
     { key: 'syllabus', label: 'Syllabus Import', description: 'AI syllabus parser',               onTest: testSyllabus, fast: false },
     { key: 'schedule', label: 'Smart Schedule', description: 'AI weekly schedule generator',      onTest: testSchedule, fast: false },
     { key: 'podcast',  label: 'Podcast (StudyCast)', description: 'AI dialogue generator',        onTest: testPodcast,  fast: false },
-    { key: 'pdf',      label: 'File Extractor', description: 'PDF / DOCX / TXT text extraction',  onTest: testPDF,      fast: true },
+    { key: 'pdf',      label: 'File Extractor', description: 'Browser PDF / DOCX / TXT extraction', onTest: testPDF,     fast: true },
   ]
 
   const allOk = services.every(s => results[s.key].status === 'ok')
@@ -276,7 +304,7 @@ export default function StatusPage() {
       </div>
 
       <p className="text-center text-xs text-slate-400">
-        Note: AI tests (AI, Syllabus, Schedule, Podcast) each take 5–35 seconds — that's normal.
+        Note: AI tests (AI, Syllabus, Schedule, Podcast) each take 5–35 seconds — that&apos;s normal.
       </p>
     </div>
   )

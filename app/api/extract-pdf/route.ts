@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRequire } from 'module'
+import { PDFParse } from 'pdf-parse'
 
 export const runtime = 'nodejs'
-
-// createRequire is the correct way to load CJS modules from an ESM context in Node.js
-const _require = createRequire(import.meta.url)
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const MAX_PDF_PAGES = 300
@@ -36,42 +33,29 @@ function hasPdfHeader(buffer: Buffer): boolean {
 }
 
 async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
-  // pdfjs-dist v3 legacy build: no external worker, no canvas, works on Vercel serverless
-  const pdfjsLib = _require('pdfjs-dist/legacy/build/pdf.js') as typeof import('pdfjs-dist')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '' // use fake inline worker
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(buffer),
+  const parser = new PDFParse({
+    data: Uint8Array.from(buffer),
     isEvalSupported: false,
     useSystemFonts: true,
   })
 
-  const document = await loadingTask.promise
+  try {
+    const info = await parser.getInfo()
+    if (info.total > MAX_PDF_PAGES) {
+      throw new DocumentImportError(
+        `PDFs are limited to ${MAX_PDF_PAGES} pages. Split this document into smaller files and try again.`,
+        413,
+        'TOO_MANY_PAGES',
+      )
+    }
 
-  if (document.numPages > MAX_PDF_PAGES) {
-    await loadingTask.destroy()
-    throw new DocumentImportError(
-      `PDFs are limited to ${MAX_PDF_PAGES} pages. Split this document into smaller files and try again.`,
-      413,
-      'TOO_MANY_PAGES',
-    )
-  }
-
-  const parts: string[] = []
-  for (let i = 1; i <= document.numPages; i++) {
-    const page = await document.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item) => ('str' in item ? (item as { str: string }).str : ''))
-      .join(' ')
-    parts.push(pageText)
-  }
-
-  await loadingTask.destroy()
-
-  return {
-    text: normalizeExtractedText(parts.join('\n\n')),
-    pages: document.numPages,
+    const result = await parser.getText()
+    return {
+      text: normalizeExtractedText(result.text),
+      pages: result.total,
+    }
+  } finally {
+    await parser.destroy().catch(() => undefined)
   }
 }
 
@@ -94,7 +78,7 @@ function extractionFailure(error: unknown): NextResponse {
     )
   }
 
-  console.error('Document extraction error:', error)
+  console.error('[extract-pdf] error:', message, error)
   return NextResponse.json(
     { error: 'Failed to read this file. Try exporting it again or use Paste Text.', code: 'EXTRACTION_FAILED' },
     { status: 500 },
@@ -113,8 +97,8 @@ export async function POST(req: NextRequest) {
       formData = await req.formData()
     } catch {
       return NextResponse.json(
-        { error: 'File must be under 10 MB. If your file is smaller, try again.', code: 'INVALID_UPLOAD' },
-        { status: 413 },
+        { error: 'The upload could not be read. Select the file again and retry.', code: 'INVALID_UPLOAD' },
+        { status: 400 },
       )
     }
 

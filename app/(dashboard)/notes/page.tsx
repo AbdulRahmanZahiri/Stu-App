@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore } from '@/lib/app-store'
 import { useAuth } from '@/lib/auth-context'
+import { extractDocumentText } from '@/lib/client-document-extractor'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { getInitials, cn } from '@/lib/utils'
@@ -115,17 +116,7 @@ export default function NotesPage() {
     const course = courses.find((c) => c.id === newNote.courseId)
     setUploading(true)
     try {
-      const formData = new FormData()
-      formData.append('file', uploadFile)
-      const response = await fetch('/api/extract-pdf', { method: 'POST', body: formData })
-      const result = await response.json().catch(() => ({ error: 'The server returned an invalid response.' })) as {
-        error?: string
-        text?: string
-      }
-      if (!response.ok) throw new Error(result.error || 'Could not extract text from this file.')
-      if (!result.text?.trim()) throw new Error('No readable text was found in this file.')
-
-      const content = result.text
+      const content = (await extractDocumentText(uploadFile)).text
       const note: Note = {
         id: crypto.randomUUID(),
         authorId: user?.id ?? 'student-001',

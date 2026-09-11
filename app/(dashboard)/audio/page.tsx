@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/lib/app-store'
+import { extractDocumentText } from '@/lib/client-document-extractor'
 import type { AudioStudyItem, PodcastLine } from '@/lib/types'
 
 const EMPTY_ITEM: AudioStudyItem = {
@@ -22,6 +23,47 @@ const EMPTY_ITEM: AudioStudyItem = {
 }
 
 type GenerateTab = 'note' | 'pdf' | 'paste'
+
+const LARGE_DOCUMENT_BYTES = 5 * 1024 * 1024
+const MAX_PODCAST_SOURCE_CHARS = 12_000
+const MIN_PODCAST_SECTION_CHARS = 2_400
+const SERIES_EPISODE_OPTIONS = [1, 3, 5] as const
+const GEN_STEPS = ['Reading your content…', 'Writing the script…', 'Polishing dialogue…', 'Almost ready…']
+
+type SeriesEpisodeCount = (typeof SERIES_EPISODE_OPTIONS)[number]
+
+function formatFileSize(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function samplePodcastSection(section: string): string {
+  if (section.length <= MAX_PODCAST_SOURCE_CHARS) return section
+
+  const separator = '\n\nAdditional material from this section:\n\n'
+  const excerptLength = Math.floor((MAX_PODCAST_SOURCE_CHARS - separator.length * 2) / 3)
+  const middleStart = Math.max(excerptLength, Math.floor((section.length - excerptLength) / 2))
+
+  return [
+    section.slice(0, excerptLength),
+    section.slice(middleStart, middleStart + excerptLength),
+    section.slice(-excerptLength),
+  ].join(separator)
+}
+
+function createPodcastSections(source: string, requestedCount: SeriesEpisodeCount): string[] {
+  const normalized = source.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  const usefulEpisodeCount = Math.max(1, Math.floor(normalized.length / MIN_PODCAST_SECTION_CHARS))
+  const episodeCount = Math.min(requestedCount, usefulEpisodeCount)
+
+  if (episodeCount === 1) return [normalized.slice(0, MAX_PODCAST_SOURCE_CHARS)]
+
+  const sectionLength = Math.ceil(normalized.length / episodeCount)
+  return Array.from({ length: episodeCount }, (_, index) => {
+    const start = index * sectionLength
+    const end = Math.min(normalized.length, start + sectionLength)
+    return samplePodcastSection(normalized.slice(start, end).trim())
+  }).filter(section => section.length >= 50)
+}
 
 // ─── Voice picker ────────────────────────────────────────────────────────────
 // Priority lists: first match wins. Alex = HOST_1 (female/bright), Jordan = HOST_2 (male/deep)
@@ -68,7 +110,7 @@ function HostBadge({ host, active }: { host: 'HOST_1' | 'HOST_2'; active: boolea
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function AudioStudyPage() {
-  const { notes, audioItems, addAudioItem } = useAppStore()
+  const { notes, audioItems, addAudioItems, dataMode } = useAppStore()
 
   // Player state
   const [activeId, setActiveId] = useState<string>('')
@@ -92,26 +134,29 @@ export default function AudioStudyPage() {
   const [pasteText, setPasteText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  const [genSuccess, setGenSuccess] = useState(false)
+  const [genSuccess, setGenSuccess] = useState<string | null>(null)
   const [genProgress, setGenProgress] = useState(0)
   const [genStep, setGenStep] = useState(0)
+  const [generationPart, setGenerationPart] = useState(1)
+  const [generationTotal, setGenerationTotal] = useState(1)
+  const [episodeCount, setEpisodeCount] = useState<SeriesEpisodeCount>(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const GEN_STEPS = ['Reading your content…', 'Writing the script…', 'Polishing dialogue…', 'Almost ready…']
+  const isLargeDocument = (pdfFile?.size ?? 0) >= LARGE_DOCUMENT_BYTES
 
   useEffect(() => {
-    if (!generating) { setGenProgress(0); setGenStep(0); return }
+    if (!generating) return
     const start = Date.now()
     const TOTAL_MS = 28_000
     const tick = setInterval(() => {
       const elapsed = Date.now() - start
-      const pct = Math.min(92, (elapsed / TOTAL_MS) * 100)
-      setGenProgress(pct)
+      const partProgress = Math.min(0.92, elapsed / TOTAL_MS)
+      const totalProgress = ((generationPart - 1 + partProgress) / generationTotal) * 100
+      setGenProgress(totalProgress)
       setGenStep(Math.min(GEN_STEPS.length - 1, Math.floor((elapsed / TOTAL_MS) * GEN_STEPS.length)))
     }, 200)
     return () => clearInterval(tick)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generating])
+  }, [generating, generationPart, generationTotal])
   const transcriptRef = useRef<HTMLDivElement>(null)
 
   // Load voices (async on some browsers)
@@ -258,10 +303,24 @@ export default function AudioStudyPage() {
   }, [segIndex, showTranscript])
 
   // ── Generation ────────────────────────────────────────────────────────────
+  function selectDocument(file: File | null) {
+    setPdfFile(file)
+    setEpisodeCount(file && file.size >= LARGE_DOCUMENT_BYTES ? 3 : 1)
+    setGenError(null)
+    setGenSuccess(null)
+  }
+
   async function generate() {
+    const generatedItems: AudioStudyItem[] = []
+    let saveAttempted = false
+
+    setGenProgress(0)
+    setGenStep(0)
+    setGenerationPart(1)
+    setGenerationTotal(1)
     setGenerating(true)
     setGenError(null)
-    setGenSuccess(false)
+    setGenSuccess(null)
 
     try {
       let source = ''
@@ -274,13 +333,7 @@ export default function AudioStudyPage() {
         title = note.title
       } else if (tab === 'pdf') {
         if (!pdfFile) throw new Error('Upload a PDF first')
-        const fd = new FormData()
-        fd.append('file', pdfFile)
-        const ex = await fetch('/api/extract-pdf', { method: 'POST', body: fd })
-        let exData: { error?: string; text?: string }
-        try { exData = await ex.json() } catch { throw new Error('Failed to read PDF — try Paste Text') }
-        if (!ex.ok) throw new Error(exData.error || 'Failed to read PDF')
-        source = exData.text ?? ''
+        source = (await extractDocumentText(pdfFile)).text
         title = pdfFile.name.replace(/\.[^.]+$/, '')
       } else {
         source = pasteText.trim()
@@ -289,39 +342,79 @@ export default function AudioStudyPage() {
 
       if (!source || source.length < 50) throw new Error('Not enough text to generate a podcast')
 
-      const res = await fetch('/api/podcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, title }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Generation failed')
+      const requestedCount = tab === 'pdf' && isLargeDocument ? episodeCount : 1
+      const sections = createPodcastSections(source, requestedCount)
+      setGenerationTotal(sections.length)
 
-      const newItem: AudioStudyItem = {
-        id: crypto.randomUUID(),
-        title: `${title} — Podcast`,
-        sourceNoteId: tab === 'note' ? selectedNote ?? undefined : undefined,
-        sourceType: tab === 'paste' ? 'text' : tab,
-        sourceName: title,
-        duration: data.duration,
-        script: data.script,
-        dialogue: data.dialogue,
-        status: 'ready',
-        createdAt: new Date(),
+      for (let index = 0; index < sections.length; index += 1) {
+        const part = index + 1
+        const partTitle = sections.length > 1 ? `${title} — Part ${part} of ${sections.length}` : title
+
+        setGenerationPart(part)
+        setGenStep(0)
+
+        const res = await fetch('/api/podcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: sections[index], title: partTitle }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || `Episode ${part} generation failed`)
+
+        generatedItems.push({
+          id: crypto.randomUUID(),
+          title: sections.length > 1 ? partTitle : `${title} — Podcast`,
+          sourceNoteId: tab === 'note' ? selectedNote ?? undefined : undefined,
+          sourceType: tab === 'paste' ? 'text' : tab,
+          sourceName: title,
+          duration: data.duration,
+          script: data.script,
+          dialogue: data.dialogue,
+          status: 'ready',
+          createdAt: new Date(),
+        })
+
+        setGenProgress((part / sections.length) * 100)
       }
 
-      addAudioItem(newItem)
+      saveAttempted = true
+      await addAudioItems(generatedItems)
+
+      const firstItem = generatedItems[0]
       stopAll()
       segRef.current = 0
       setSegIndex(0)
-      setActiveId(newItem.id)
-      setGenSuccess(true)
+      setActiveId(firstItem.id)
+
+      const savedLocation = dataMode === 'database' ? 'to your account' : 'in this browser'
+      setGenSuccess(generatedItems.length > 1
+        ? `${generatedItems.length}-part podcast series created and saved ${savedLocation}. Start with Part 1.`
+        : `Episode ready and saved ${savedLocation}. Hit play.`
+      )
       setSelectedNote(null)
       setPdfFile(null)
       setPasteText('')
-      setTimeout(() => setGenSuccess(false), 4000)
+      setEpisodeCount(1)
+      setTimeout(() => setGenSuccess(null), 7000)
     } catch (err) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
+      const message = err instanceof Error ? err.message : 'Generation failed'
+      if (generatedItems.length > 0 && !saveAttempted) {
+        try {
+          await addAudioItems(generatedItems)
+          stopAll()
+          segRef.current = 0
+          setSegIndex(0)
+          setActiveId(generatedItems[0].id)
+          setGenError(`${generatedItems.length} completed episode${generatedItems.length === 1 ? '' : 's'} saved, but the series stopped: ${message}`)
+        } catch (saveError) {
+          const saveMessage = saveError instanceof Error ? saveError.message : 'Database save failed'
+          setGenError(`${generatedItems.length} episode${generatedItems.length === 1 ? ' was' : 's were'} generated, but could not be saved: ${saveMessage}`)
+        }
+      } else if (saveAttempted) {
+        setGenError(`${generatedItems.length > 1 ? 'Episodes were' : 'The episode was'} generated, but could not be saved: ${message}`)
+      } else {
+        setGenError(message)
+      }
     } finally {
       setGenerating(false)
     }
@@ -668,7 +761,10 @@ export default function AudioStudyPage() {
                       type="file"
                       accept=".pdf,.docx,.txt,.md"
                       className="hidden"
-                      onChange={e => setPdfFile(e.target.files?.[0] ?? null)}
+                      onChange={e => {
+                        selectDocument(e.target.files?.[0] ?? null)
+                        e.currentTarget.value = ''
+                      }}
                     />
                     <button
                       onClick={() => fileInputRef.current?.click()}
@@ -683,7 +779,7 @@ export default function AudioStudyPage() {
                         <>
                           <Check className="mx-auto mb-1 h-5 w-5 text-emerald-500" />
                           <p className="text-xs font-medium text-emerald-700 truncate">{pdfFile.name}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">Click to change</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{formatFileSize(pdfFile.size)} · Click to change</p>
                         </>
                       ) : (
                         <>
@@ -693,6 +789,36 @@ export default function AudioStudyPage() {
                         </>
                       )}
                     </button>
+
+                    {isLargeDocument && (
+                      <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                          <Radio className="h-3.5 w-3.5" />
+                          Large document detected
+                        </div>
+                        <p className="mt-1 text-[10px] leading-relaxed text-emerald-700">
+                          Create a series to cover more sections. Each episode is saved separately; the raw file stays on this device.
+                        </p>
+                        <div className="mt-2 grid grid-cols-3 gap-1.5">
+                          {SERIES_EPISODE_OPTIONS.map(option => (
+                            <button
+                              key={option}
+                              type="button"
+                              aria-pressed={episodeCount === option}
+                              onClick={() => setEpisodeCount(option)}
+                              className={cn(
+                                'rounded-lg border px-2 py-1.5 text-[10px] font-semibold transition-colors',
+                                episodeCount === option
+                                  ? 'border-emerald-500 bg-emerald-600 text-white'
+                                  : 'border-emerald-200 bg-white text-emerald-700 hover:border-emerald-400',
+                              )}
+                            >
+                              {option === 1 ? '1 episode' : `Up to ${option} parts`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -719,14 +845,17 @@ export default function AudioStudyPage() {
               {genSuccess && (
                 <div className="mb-2 flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
                   <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                  <p className="text-xs text-emerald-700 font-medium">Episode ready! Hit play.</p>
+                  <p className="text-xs text-emerald-700 font-medium">{genSuccess}</p>
                 </div>
               )}
 
               {generating ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-[10px] text-slate-500">
-                    <span>{GEN_STEPS[genStep]}</span>
+                    <span>
+                      {generationTotal > 1 ? `Episode ${generationPart} of ${generationTotal} · ` : ''}
+                      {GEN_STEPS[genStep]}
+                    </span>
                     <span>{Math.round(genProgress)}%</span>
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
@@ -735,7 +864,7 @@ export default function AudioStudyPage() {
                       style={{ width: `${genProgress}%` }}
                     />
                   </div>
-                  <p className="text-center text-[10px] text-slate-400">Usually takes 20–35 seconds</p>
+                  <p className="text-center text-[10px] text-slate-400">Usually takes 20–35 seconds per episode</p>
                 </div>
               ) : (
                 <Button
@@ -743,7 +872,8 @@ export default function AudioStudyPage() {
                   onClick={generate}
                   disabled={!canGenerate}
                 >
-                  <Sparkles className="h-3.5 w-3.5" /> Generate Podcast Episode
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {isLargeDocument && episodeCount > 1 ? `Generate Up to ${episodeCount} Episodes` : 'Generate Podcast Episode'}
                 </Button>
               )}
 

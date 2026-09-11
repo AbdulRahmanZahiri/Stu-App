@@ -6,6 +6,7 @@ import type { AudioStudyItem, CalendarEvent, Course, GradeEntry, Note, Task } fr
 import { useAuth } from './auth-context'
 import {
   createAudioItem,
+  createAudioItems,
   createCalendarEvent,
   createCourse,
   createNote as createNoteRecord,
@@ -110,6 +111,7 @@ interface AppStore {
   updateNote: (id: string, patch: Partial<Pick<Note, 'title' | 'content' | 'courseId' | 'courseCode' | 'tags' | 'excerpt'>>) => void
   deleteNote: (id: string) => void
   addAudioItem: (item: AudioStudyItem) => void
+  addAudioItems: (items: AudioStudyItem[]) => Promise<void>
   saveSyllabusImport: (input: SyllabusImportInput) => Promise<void>
 }
 
@@ -336,6 +338,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (user) void createAudioItem(item, user.id).catch(handlePersistenceError)
   }, [handlePersistenceError, user])
 
+  const addAudioItems = useCallback(async (incoming: AudioStudyItem[]) => {
+    const items = incoming.map((item) => ({
+      ...item,
+      id: isUuid(item.id) ? item.id : uuid(),
+    }))
+    setAudioItems((previous) => [...items, ...previous])
+
+    if (!user) return
+
+    try {
+      await createAudioItems(items, user.id)
+      setSyncError(null)
+    } catch (error) {
+      handlePersistenceError(error)
+      throw error
+    }
+  }, [handlePersistenceError, user])
+
   const saveSyllabusImport = useCallback(async (input: SyllabusImportInput) => {
     const normalizedTasks = input.tasks.map((task) => ({
       ...task,
@@ -405,6 +425,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateNote,
       deleteNote,
       addAudioItem,
+      addAudioItems,
       saveSyllabusImport,
     }}>
       {children}

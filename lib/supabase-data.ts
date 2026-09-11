@@ -7,6 +7,7 @@ import type {
   Course,
   GradeEntry,
   Note,
+  PodcastLine,
   Task,
 } from './types'
 import type { PlannerState } from './planner-types'
@@ -54,6 +55,21 @@ function numberOrUndefined(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') return undefined
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
+}
+
+function dialogueFromScript(script: string | undefined): PodcastLine[] | undefined {
+  if (!script) return undefined
+
+  const dialogue = script.split('\n').flatMap((line): PodcastLine[] => {
+    const match = line.trim().match(/^(Alex|Jordan|HOST[_\s-]?1|HOST[_\s-]?2):\s*(.+)$/i)
+    if (!match) return []
+
+    const speaker = /^(Alex|HOST[_\s-]?1)$/i.test(match[1]) ? 'HOST_1' : 'HOST_2'
+    const text = match[2].trim()
+    return text ? [{ speaker, text }] : []
+  })
+
+  return dialogue.length > 0 ? dialogue : undefined
 }
 
 function letterGrade(value: number): string {
@@ -265,16 +281,20 @@ export async function loadUserAppData(userId: string, currentUserName: string): 
     }
   })
 
-  const audioItems: AudioStudyItem[] = ((audioResult.data ?? []) as JsonObject[]).map((row) => ({
-    id: String(row.id),
-    title: String(row.title ?? ''),
-    sourceNoteId: typeof row.source_note_id === 'string' ? row.source_note_id : undefined,
-    duration: numberOrUndefined(row.duration_seconds),
-    script: typeof row.script === 'string' ? row.script : undefined,
-    audioUrl: typeof row.audio_url === 'string' ? row.audio_url : undefined,
-    status: (row.status as AudioStudyItem['status']) ?? 'ready',
-    createdAt: dateOrUndefined(row.created_at) ?? new Date(),
-  }))
+  const audioItems: AudioStudyItem[] = ((audioResult.data ?? []) as JsonObject[]).map((row) => {
+    const script = typeof row.script === 'string' ? row.script : undefined
+    return {
+      id: String(row.id),
+      title: String(row.title ?? ''),
+      sourceNoteId: typeof row.source_note_id === 'string' ? row.source_note_id : undefined,
+      duration: numberOrUndefined(row.duration_seconds),
+      script,
+      dialogue: dialogueFromScript(script),
+      audioUrl: typeof row.audio_url === 'string' ? row.audio_url : undefined,
+      status: (row.status as AudioStudyItem['status']) ?? 'ready',
+      createdAt: dateOrUndefined(row.created_at) ?? new Date(),
+    }
+  })
 
   return { courses, tasks, notes, calendarEvents, gradeEntries, audioItems }
 }
@@ -580,8 +600,10 @@ export async function saveSyllabusImport(input: SyllabusImportInput, userId: str
   return String(data)
 }
 
-export async function createAudioItem(item: AudioStudyItem, userId: string): Promise<void> {
-  const { error } = await supabase.from('audio_study_items').insert({
+export async function createAudioItems(items: AudioStudyItem[], userId: string): Promise<void> {
+  if (items.length === 0) return
+
+  const { error } = await supabase.from('audio_study_items').insert(items.map((item) => ({
     id: item.id,
     student_id: userId,
     title: item.title,
@@ -590,8 +612,12 @@ export async function createAudioItem(item: AudioStudyItem, userId: string): Pro
     script: item.script ?? null,
     audio_url: item.audioUrl ?? null,
     status: item.status,
-  })
-  if (error) dataError('Could not save audio item', error)
+  })))
+  if (error) dataError('Could not save audio items', error)
+}
+
+export async function createAudioItem(item: AudioStudyItem, userId: string): Promise<void> {
+  await createAudioItems([item], userId)
 }
 
 export async function loadPlannerState(userId: string): Promise<PlannerState | null> {

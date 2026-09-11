@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore } from '@/lib/app-store'
+import { extractDocumentText } from '@/lib/client-document-extractor'
 import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -127,13 +128,7 @@ export default function FlashcardsPage() {
         title = note.title
       } else if (tab === 'pdf') {
         if (!pdfFile) throw new Error('Upload a PDF first')
-        const fd = new FormData()
-        fd.append('file', pdfFile)
-        const ex = await fetch('/api/extract-pdf', { method: 'POST', body: fd })
-        let exData: { error?: string; text?: string }
-        try { exData = await ex.json() } catch { throw new Error('Failed to read PDF — try Paste Text') }
-        if (!ex.ok) throw new Error(exData.error || 'Failed to read PDF')
-        source = exData.text ?? ''
+        source = (await extractDocumentText(pdfFile)).text
         title = pdfFile.name.replace(/\.[^.]+$/, '')
       } else {
         source = pasteText.trim()

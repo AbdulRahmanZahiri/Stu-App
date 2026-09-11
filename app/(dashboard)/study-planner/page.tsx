@@ -48,7 +48,7 @@ export default function StudyPlannerPage() {
   const [schedStep, setSchedStep] = useState(0)
 
   useEffect(() => {
-    if (!scheduling) { setSchedProgress(0); setSchedStep(0); return }
+    if (!scheduling) return
     const start = Date.now()
     const TOTAL_MS = 18_000
     const tick = setInterval(() => {
@@ -57,7 +57,11 @@ export default function StudyPlannerPage() {
       setSchedProgress(pct)
       setSchedStep(Math.min(SCHED_STEPS.length - 1, Math.floor((elapsed / TOTAL_MS) * SCHED_STEPS.length)))
     }, 200)
-    return () => clearInterval(tick)
+    return () => {
+      clearInterval(tick)
+      setSchedProgress(0)
+      setSchedStep(0)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scheduling])
 
@@ -125,10 +129,6 @@ export default function StudyPlannerPage() {
         content = await lmsFile.text()
       } else {
         if (!lmsUrl.trim()) throw new Error('Enter a calendar URL')
-        const res = await fetch('/api/extract-pdf', {
-          method: 'POST',
-          body: (() => { const f = new FormData(); f.append('url', lmsUrl.trim()); return f })(),
-        })
         // For URL approach, fetch the ICS directly from the client
         const icsRes = await fetch(lmsUrl.trim())
         if (!icsRes.ok) throw new Error('Could not fetch calendar URL. Make sure it\'s publicly accessible.')
@@ -146,7 +146,7 @@ export default function StudyPlannerPage() {
     }
   }
 
-  const daysUntil = (date: Date) => Math.ceil((date.getTime() - Date.now()) / 86_400_000)
+  const daysUntil = useCallback((date: Date) => Math.ceil((date.getTime() - Date.now()) / 86_400_000), [])
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
@@ -180,7 +180,7 @@ export default function StudyPlannerPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <Zap className="h-5 w-5 text-emerald-500" />
-              <span className="text-xs font-semibold text-slate-500">This Week's Load</span>
+              <span className="text-xs font-semibold text-slate-500">This Week&apos;s Load</span>
             </div>
             <p className="text-3xl font-black text-slate-800">{workload}<span className="text-base font-normal text-slate-400">%</span></p>
             <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
@@ -277,7 +277,7 @@ export default function StudyPlannerPage() {
                 <div className="py-10 text-center">
                   <CalendarDays className="mx-auto mb-3 h-10 w-10 text-slate-200" />
                   <p className="text-sm font-medium text-slate-400">No schedule yet</p>
-                  <p className="text-xs text-slate-300 mt-1">Click "Generate My Schedule" — AI will plan your week</p>
+                  <p className="text-xs text-slate-300 mt-1">Click &quot;Generate My Schedule&quot; — AI will plan your week</p>
                 </div>
               )}
 
