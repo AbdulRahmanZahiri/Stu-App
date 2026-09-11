@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { optionalApiUser } from '@/lib/api-auth'
 import { GROQ_MODEL } from '@/lib/groq-client'
 
+export const maxDuration = 60
+
 const MAX_RETRY_WAIT_MS = 35_000
 const MAX_ATTEMPTS = 4
 

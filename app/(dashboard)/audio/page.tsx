@@ -358,7 +358,17 @@ export default function AudioStudyPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: sections[index], title: partTitle }),
         })
-        const data = await res.json()
+        let data: { error?: string; dialogue?: PodcastLine[]; script?: string; duration?: number }
+        try {
+          data = await res.json()
+        } catch {
+          const raw = await res.text().catch(() => '')
+          throw new Error(
+            res.status === 504 || res.status === 524
+              ? 'The AI took too long to respond. Try a shorter text or use Paste Text with a smaller excerpt.'
+              : raw.trim().slice(0, 120) || `Episode ${part} generation failed (${res.status})`
+          )
+        }
         if (!res.ok) throw new Error(data.error || `Episode ${part} generation failed`)
 
         generatedItems.push({

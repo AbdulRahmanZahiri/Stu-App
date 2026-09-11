@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const MAX_SOURCE = 12_000
 

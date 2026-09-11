@@ -3,6 +3,7 @@ import type { PodcastLine } from '@/lib/types'
 import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const PODCAST_SYSTEM = `You are writing a script for StudyCast — a fast, fun, genuinely entertaining academic podcast.
 

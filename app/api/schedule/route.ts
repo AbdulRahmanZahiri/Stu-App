@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   if (!process.env.GROQ_API_KEY) {

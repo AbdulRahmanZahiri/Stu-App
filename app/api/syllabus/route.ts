@@ -3,6 +3,8 @@ import { requireApiUser } from '@/lib/api-auth'
 import { parseSyllabusLocally, type ParsedSyllabusData } from '@/lib/basic-syllabus-parser'
 import { groqChat, GROQ_MODEL } from '@/lib/groq-client'
 
+export const maxDuration = 60
+
 const MAX_TEXT_LENGTH = 50_000
 const MAX_FILENAME_LENGTH = 260
 
