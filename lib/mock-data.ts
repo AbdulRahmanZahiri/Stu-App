@@ -512,6 +512,17 @@ export const mockChatRooms: ChatRoom[] = [
     unreadCount: 0,
     createdAt: new Date('2026-01-10'),
   },
+  {
+    id: 'room-006',
+    name: 'Engineering Students',
+    type: 'faculty',
+    description: 'Engineering faculty group chat',
+    university: 'Engineering',
+    memberCount: 184,
+    color: '#3b82f6',
+    unreadCount: 0,
+    createdAt: new Date('2025-09-01'),
+  },
 ]
 
 export const mockChatMessages: ChatMessage[] = [

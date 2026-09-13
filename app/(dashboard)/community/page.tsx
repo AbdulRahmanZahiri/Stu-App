@@ -231,6 +231,8 @@ function CommunityPageInner() {
     setChatMode('demo')
     setChatError(reason ?? null)
     setRooms(mockChatRooms)
+    // Mark all mock rooms as "joined" so the sidebar is populated
+    setMyRoomIds(new Set(mockChatRooms.map((r) => r.id)))
     setActiveRoomId((prev) => prev ?? mockChatRooms[0]?.id ?? null)
     setAllMessages(mockChatMessages)
     setLoadingRooms(false)
@@ -332,8 +334,19 @@ function CommunityPageInner() {
           .from('chat_rooms').select('*', { head: true, count: 'exact' })
         if (countError) throw countError
         if ((count ?? 0) === 0) {
-          const { error: seedError } = await supabase.from('chat_rooms').insert(DEFAULT_ROOMS)
+          const { data: seeded, error: seedError } = await supabase
+            .from('chat_rooms').insert(DEFAULT_ROOMS).select('id,type')
           if (seedError) throw seedError
+          // Auto-join the first general room so new users land in a live chat
+          const firstGeneral = (seeded ?? []).find((r) => (r as { type: string }).type === 'general')
+          if (firstGeneral) {
+            await supabase.from('room_members').insert({
+              room_id: (firstGeneral as { id: string }).id,
+              student_id: authUserId!,
+              member_name: profile?.name?.trim() || user?.email?.split('@')[0] || 'Student',
+              role: 'member',
+            }).maybeSingle()
+          }
         }
         await refreshRooms(authUserId!)
         // Back-fill member_name for existing null rows belonging to this user
