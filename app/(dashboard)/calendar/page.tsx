@@ -6,6 +6,7 @@ import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
   isSameMonth, isSameDay, isToday, addMonths, subMonths,
   startOfWeek, endOfWeek, addWeeks, subWeeks,
+  addDays, startOfDay, max,
 } from 'date-fns'
 import {
   ChevronLeft, ChevronRight, CalendarDays, Clock, Plus, Trash2,
@@ -23,6 +24,80 @@ import { useAppStore } from '@/lib/app-store'
 import { useAuth } from '@/lib/auth-context'
 import { cn } from '@/lib/utils'
 import type { CalendarEvent } from '@/lib/types'
+
+// Maps day abbreviations to JS getDay() values (0=Sun … 6=Sat).
+// Order matters: check 'Th'/'Tu'/'Su'/'Sa' before single letters.
+const DAY_MAP: Record<string, number> = {
+  Su: 0, M: 1, Mo: 1, Tu: 2, T: 2, W: 3, Th: 4, F: 5, Sa: 6, S: 6,
+}
+const DAY_PATTERN = /Th|Su|Sa|Tu|Mo|M|W|F|T|S/g
+
+function to24h(time: string, ampm: string | undefined): string {
+  const [h, m] = time.split(':').map(Number)
+  let hours = h
+  if (ampm?.toUpperCase() === 'PM' && hours < 12) hours += 12
+  if (ampm?.toUpperCase() === 'AM' && hours === 12) hours = 0
+  return `${String(hours).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+function parseSchedule(schedule: string): { days: number[]; startTime: string; endTime: string } | null {
+  const timeRe = /(\d{1,2}:\d{2})\s*(AM|PM|am|pm)?\s*[-–]\s*(\d{1,2}:\d{2})\s*(AM|PM|am|pm)?/i
+  const tm = schedule.match(timeRe)
+  if (!tm) return null
+  const dayPart = schedule.slice(0, tm.index)
+  const days: number[] = []
+  DAY_PATTERN.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = DAY_PATTERN.exec(dayPart)) !== null) {
+    const n = DAY_MAP[m[0]]
+    if (n !== undefined && !days.includes(n)) days.push(n)
+  }
+  if (!days.length) return null
+  return {
+    days,
+    startTime: to24h(tm[1], tm[2]),
+    endTime: to24h(tm[3], tm[4] ?? tm[2]),
+  }
+}
+
+function makeClassEvents(
+  courses: import('@/lib/types').Course[],
+  from: Date,
+  to: Date,
+  studentId: string,
+): import('@/lib/types').CalendarEvent[] {
+  const out: import('@/lib/types').CalendarEvent[] = []
+  for (const course of courses) {
+    if (!course.schedule || course.status !== 'active') continue
+    const parsed = parseSchedule(course.schedule)
+    if (!parsed) continue
+    const [sh, sm] = parsed.startTime.split(':').map(Number)
+    const [eh, em] = parsed.endTime.split(':').map(Number)
+    let day = startOfDay(from)
+    while (day <= to) {
+      if (parsed.days.includes(day.getDay())) {
+        const startDate = new Date(day); startDate.setHours(sh, sm, 0, 0)
+        const endDate = new Date(day); endDate.setHours(eh, em, 0, 0)
+        out.push({
+          id: `class-${course.id}-${format(day, 'yyyy-MM-dd')}`,
+          studentId,
+          courseId: course.id,
+          courseCode: course.code,
+          title: course.room ? `${course.code} · ${course.room}` : course.code,
+          type: 'class',
+          startDate,
+          endDate,
+          allDay: false,
+          color: course.color,
+          location: course.room,
+          description: course.name,
+        })
+      }
+      day = addDays(day, 1)
+    }
+  }
+  return out
+}
 
 const eventTypeConfig = {
   deadline: { label: 'Deadline', bg: 'bg-rose-100', text: 'text-rose-700', dot: 'bg-rose-500' },
@@ -50,8 +125,22 @@ export default function CalendarPage() {
     description: '',
   })
 
+  // Date range computations — must be before the events useMemo
+  const monthStart = startOfMonth(currentDate)
+  const monthEnd = endOfMonth(currentDate)
+  const calStart = startOfWeek(monthStart)
+  const calEnd = endOfWeek(monthEnd)
+  const calDays = eachDayOfInterval({ start: calStart, end: calEnd })
+
+  const weekStart = startOfWeek(currentDate)
+  const weekEnd = endOfWeek(currentDate)
+  const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd })
+  const weekLabel = `${format(weekStart, 'MMM d')} – ${format(weekEnd, 'MMM d, yyyy')}`
+
   const events = useMemo(() => {
-    const existingTaskKeys = new Set(calendarEvents.map((event) => `${event.courseId ?? ''}:${event.title}:${event.startDate.toISOString()}`))
+    const existingTaskKeys = new Set(calendarEvents.map((e) => `${e.courseId ?? ''}:${e.title}:${e.startDate.toISOString()}`))
+
+    // Tasks → calendar events. Use allDay:true since task due dates have no specific time.
     const taskEvents: CalendarEvent[] = tasks.flatMap((task) => {
       if (!task.dueDate || task.status === 'completed') return []
       const key = `${task.courseId ?? ''}:${task.title}:${task.dueDate.toISOString()}`
@@ -63,25 +152,23 @@ export default function CalendarPage() {
         title: task.title,
         type: task.type === 'exam' || task.type === 'quiz' ? 'exam' : 'deadline',
         startDate: task.dueDate,
-        allDay: false,
+        allDay: true,
         color: task.courseColor,
         description: task.description,
         courseCode: task.courseCode,
       }]
     })
-    return [...calendarEvents, ...taskEvents]
-  }, [calendarEvents, tasks])
 
-  const monthStart = startOfMonth(currentDate)
-  const monthEnd = endOfMonth(currentDate)
-  const calStart = startOfWeek(monthStart)
-  const calEnd = endOfWeek(monthEnd)
-  const calDays = eachDayOfInterval({ start: calStart, end: calEnd })
+    // Class events generated from course schedules for the visible range + 60-day upcoming window
+    const classRangeStart = view === 'week' ? weekStart : calStart
+    const classRangeEnd = max([
+      view === 'week' ? weekEnd : calEnd,
+      addDays(new Date(), 60),
+    ])
+    const classEvents = makeClassEvents(courses, classRangeStart, classRangeEnd, user?.id ?? '')
 
-  const weekStart = startOfWeek(currentDate)
-  const weekEnd = endOfWeek(currentDate)
-  const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd })
-  const weekLabel = `${format(weekStart, 'MMM d')} – ${format(weekEnd, 'MMM d, yyyy')}`
+    return [...calendarEvents, ...taskEvents, ...classEvents]
+  }, [calendarEvents, tasks, courses, view, weekStart, weekEnd, calStart, calEnd, user?.id])
 
   function navigate(dir: 1 | -1) {
     setCurrentDate((d) =>
