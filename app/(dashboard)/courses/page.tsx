@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
   Upload, Plus, CheckCircle2,
-  Clock, ChevronRight, Check, Loader2, AlertCircle, Trash2,
+  Clock, ChevronRight, Check, Loader2, AlertCircle, Trash2, FileText,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,8 +43,15 @@ interface ParsedSyllabus {
 }
 
 export default function CoursesPage() {
+  return <Suspense><CoursesPageInner /></Suspense>
+}
+
+function CoursesPageInner() {
   const { courses, addCourse: storeAddCourse, deleteCourse, saveSyllabusImport, addCalendarEvent } = useAppStore()
   const { user, profile } = useAuth()
+  const searchParams = useSearchParams()
+
+  // ── existing per-course syllabus upload state ─────────────────────────────
   const [uploadingCourse, setUploadingCourse] = useState<Course | null>(null)
   const [uploadState, setUploadState] = useState<UploadState>('idle')
   const [dragOver, setDragOver] = useState(false)
@@ -58,6 +66,203 @@ export default function CoursesPage() {
   const [showAddCourse, setShowAddCourse] = useState(false)
   const [newCourse, setNewCourse] = useState({ code: '', name: '', instructor: '', credits: '3', schedule: '', room: '', color: '#6366f1' })
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── free-standing "Import Syllabus" flow (no pre-existing course needed) ──
+  type FreeImportStep = 'upload' | 'confirm'
+  const [showFreeImport, setShowFreeImport] = useState(false)
+  const [freeImportStep, setFreeImportStep] = useState<FreeImportStep>('upload')
+  const [freeUploadState, setFreeUploadState] = useState<UploadState>('idle')
+  const [freeDragOver, setFreeDragOver] = useState(false)
+  const [freeParsed, setFreeParsed] = useState<ParsedSyllabus | null>(null)
+  const [freeParseError, setFreeParseError] = useState<string | null>(null)
+  const [freeParseWarning, setFreeParseWarning] = useState<string | null>(null)
+  const [freeFileName, setFreeFileName] = useState('')
+  const [freeSourceFile, setFreeSourceFile] = useState<File | null>(null)
+  const [freeSaving, setFreeSaving] = useState(false)
+  const [freeUploadTab, setFreeUploadTab] = useState<UploadTab>('file')
+  const [freePasteText, setFreePasteText] = useState('')
+  const [freeCourse, setFreeCourse] = useState({ code: '', name: '', instructor: '', credits: '3', color: '#6366f1' })
+  const freeFileRef = useRef<HTMLInputElement>(null)
+
+  // Auto-open free import when navigated here with ?import=1 (e.g. from dashboard)
+  useEffect(() => {
+    if (searchParams.get('import') === '1') {
+      setShowFreeImport(true)
+    }
+  }, [searchParams])
+
+  function resetFreeImport() {
+    setShowFreeImport(false)
+    setFreeImportStep('upload')
+    setFreeUploadState('idle')
+    setFreeParsed(null)
+    setFreeParseError(null)
+    setFreeParseWarning(null)
+    setFreeFileName('')
+    setFreeSourceFile(null)
+    setFreeSaving(false)
+    setFreePasteText('')
+    setFreeUploadTab('file')
+    setFreeCourse({ code: '', name: '', instructor: '', credits: '3', color: '#6366f1' })
+  }
+
+  async function parseFreeText(text: string, name: string) {
+    setFreeUploadState('parsing')
+    setFreeParseError(null)
+    setFreeParseWarning(null)
+    setFreeParsed(null)
+    try {
+      const res = await fetch('/api/syllabus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, fileName: name }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to parse syllabus')
+      const p: ParsedSyllabus = data.data
+      setFreeParsed(p)
+      setFreeParseWarning(typeof data.warning === 'string' ? data.warning : null)
+      setFreeUploadState('done')
+      // Pre-fill course fields from AI parse
+      setFreeCourse({
+        code: p.courseCode?.trim().toUpperCase() || '',
+        name: p.courseTitle?.trim() || '',
+        instructor: p.instructor?.trim() || '',
+        credits: '3',
+        color: COURSE_COLORS[Math.floor(Math.random() * COURSE_COLORS.length)],
+      })
+      setFreeImportStep('confirm')
+    } catch (err) {
+      setFreeParseError(err instanceof Error ? err.message : 'Something went wrong')
+      setFreeUploadState('error')
+    }
+  }
+
+  async function handleFreeFile(file: File) {
+    setFreeFileName(file.name)
+    setFreeSourceFile(file)
+    setFreeUploadState('reading')
+    setFreeParseError(null)
+    setFreeParseWarning(null)
+    setFreeParsed(null)
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (file.size > 10 * 1024 * 1024) { setFreeParseError('Files must be under 10 MB.'); setFreeUploadState('error'); return }
+    if (!['pdf', 'docx', 'txt', 'md'].includes(ext) && file.type !== 'application/pdf' && !file.type.startsWith('text/')) {
+      setFreeParseError('Supported files are PDF, DOCX, TXT, and Markdown.')
+      setFreeUploadState('error')
+      return
+    }
+    try {
+      const text = (await extractDocumentText(file)).text
+      await parseFreeText(text, file.name)
+    } catch (err) {
+      setFreeParseError(err instanceof Error ? err.message : 'Could not read file')
+      setFreeUploadState('error')
+    }
+  }
+
+  async function handleFreePasteSubmit() {
+    if (!freePasteText.trim() || freePasteText.trim().length < 50) {
+      setFreeParseError('Please paste at least a few sentences of your syllabus.')
+      setFreeUploadState('error')
+      return
+    }
+    setFreeFileName('pasted-syllabus.txt')
+    setFreeSourceFile(null)
+    setFreeUploadState('reading')
+    await parseFreeText(freePasteText.trim(), 'syllabus')
+  }
+
+  async function confirmFreeImport() {
+    if (!freeParsed || !freeCourse.code.trim() || !freeCourse.name.trim()) return
+    setFreeSaving(true)
+
+    const course: Course = {
+      id: crypto.randomUUID(),
+      studentId: user?.id ?? '',
+      code: freeCourse.code.trim().toUpperCase(),
+      name: freeCourse.name.trim(),
+      instructor: freeCourse.instructor.trim() || undefined,
+      credits: parseInt(freeCourse.credits) || 3,
+      semester: profile?.semester ?? new Date().getFullYear().toString(),
+      year: new Date().getFullYear(),
+      color: freeCourse.color,
+      status: 'active',
+      syllabusUploaded: false,
+    }
+
+    const sortedDates = [...(freeParsed.keyDates ?? [])]
+      .filter((kd) => kd.title && kd.date && !isNaN(new Date(kd.date).getTime()))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const newTasks: Task[] = sortedDates.map((kd) => {
+      const t = kd.title.toLowerCase()
+      const isExam = t.includes('exam') || t.includes('midterm') || t.includes('final')
+      const isQuiz = t.includes('quiz') || t.includes('test')
+      const isLab = t.includes('lab') || t.includes('laboratory')
+      const isProject = t.includes('project') || t.includes('presentation') || t.includes('report') || t.includes('poster')
+      const isReading = t.includes('reading') || t.includes('chapter')
+      const type: Task['type'] = isExam ? 'exam' : isQuiz ? 'quiz' : isLab ? 'lab' : isProject ? 'project' : isReading ? 'other' : 'assignment'
+      const priority: Task['priority'] = isExam || isProject ? 'high' : isQuiz ? 'medium' : 'medium'
+      return {
+        id: crypto.randomUUID(),
+        studentId: user?.id ?? '',
+        courseId: course.id,
+        title: kd.title,
+        type,
+        status: 'not_started' as Task['status'],
+        priority,
+        dueDate: new Date(kd.date),
+        courseCode: course.code,
+        courseColor: course.color,
+        courseName: course.name,
+        tags: ['syllabus-import'],
+      }
+    })
+
+    try {
+      storeAddCourse(course)
+      await saveSyllabusImport({
+        courseId: course.id,
+        file: freeSourceFile,
+        fileName: freeFileName || 'pasted-syllabus.txt',
+        extractedData: { ...freeParsed },
+        gradingBreakdown: freeParsed.gradingBreakdown ?? [],
+        tasks: newTasks,
+      })
+
+      const calendarWorthy = sortedDates.filter((kd) => {
+        const t = kd.title.toLowerCase()
+        return t.includes('exam') || t.includes('midterm') || t.includes('final') ||
+          t.includes('quiz') || t.includes('project') || t.includes('presentation') ||
+          t.includes('deadline') || t.includes('due')
+      })
+      for (const kd of calendarWorthy) {
+        const t = kd.title.toLowerCase()
+        const calType: CalendarEvent['type'] = (t.includes('exam') || t.includes('midterm') || t.includes('final')) ? 'exam' : 'deadline'
+        addCalendarEvent({
+          id: crypto.randomUUID(),
+          studentId: user?.id ?? '',
+          courseId: course.id,
+          courseCode: course.code,
+          title: `${course.code} – ${kd.title}`,
+          type: calType,
+          startDate: new Date(kd.date),
+          allDay: true,
+          color: course.color,
+        })
+      }
+
+      const msg = newTasks.length > 0
+        ? `${course.code} created with ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} added!`
+        : `${course.code} created from syllabus!`
+      toast.success(msg)
+      resetFreeImport()
+    } catch (error) {
+      setFreeParseError(error instanceof Error ? error.message : 'Could not save')
+      setFreeSaving(false)
+    }
+  }
 
   function handleAddCourse() {
     if (!newCourse.code.trim() || !newCourse.name.trim()) return
@@ -250,10 +455,16 @@ export default function CoursesPage() {
           <h1 className="text-2xl font-bold text-slate-900">My Courses</h1>
           <p className="mt-1 text-sm text-slate-500">Manage your courses and upload syllabi for AI parsing</p>
         </div>
-        <Button variant="gradient" size="sm" className="gap-1.5" onClick={() => setShowAddCourse(true)}>
-          <Plus className="h-3.5 w-3.5" />
-          Add Course
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setShowFreeImport(true)}>
+            <FileText className="h-3.5 w-3.5" />
+            Import Syllabus
+          </Button>
+          <Button variant="gradient" size="sm" className="gap-1.5" onClick={() => setShowAddCourse(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Add Course
+          </Button>
+        </div>
       </motion.div>
 
       <motion.div
@@ -281,7 +492,7 @@ export default function CoursesPage() {
         ))}
       </motion.div>
 
-      {/* Hidden file input */}
+      {/* Hidden file inputs */}
       <input
         ref={fileRef}
         type="file"
@@ -293,6 +504,242 @@ export default function CoursesPage() {
           if (file) void handleFile(file)
         }}
       />
+      <input
+        ref={freeFileRef}
+        type="file"
+        accept=".pdf,.docx,.txt,.md"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0]
+          e.currentTarget.value = ''
+          if (file) void handleFreeFile(file)
+        }}
+      />
+
+      {/* ── Free-standing Import Syllabus dialog ─────────────────────────── */}
+      <Dialog open={showFreeImport} onOpenChange={(open) => { if (!open) resetFreeImport() }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Syllabus</DialogTitle>
+            <DialogDescription>
+              {freeImportStep === 'upload'
+                ? 'Upload your syllabus — AI will extract course info and create all tasks automatically.'
+                : 'Confirm the course details before we create everything.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* STEP 1 — upload / paste */}
+          {freeImportStep === 'upload' && (
+            <>
+              {/* Tab switcher */}
+              {(freeUploadState === 'idle' || freeUploadState === 'error') && (
+                <div>
+                  <div className="mb-4 flex rounded-xl border border-slate-100 bg-slate-50 p-1">
+                    <button onClick={() => setFreeUploadTab('file')} className={cn('flex-1 rounded-lg py-2 text-xs font-semibold transition-all', freeUploadTab === 'file' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>Upload File</button>
+                    <button onClick={() => setFreeUploadTab('paste')} className={cn('flex-1 rounded-lg py-2 text-xs font-semibold transition-all', freeUploadTab === 'paste' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>Paste Text</button>
+                  </div>
+
+                  {freeUploadTab === 'file' ? (
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setFreeDragOver(true) }}
+                      onDragLeave={() => setFreeDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setFreeDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFreeFile(f) }}
+                      className={cn('relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all cursor-pointer', freeDragOver ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50')}
+                      onClick={() => freeFileRef.current?.click()}
+                    >
+                      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
+                        <Upload className="h-6 w-6 text-emerald-600" />
+                      </div>
+                      <p className="text-sm font-semibold text-slate-700">Drop your syllabus here</p>
+                      <p className="mt-1 text-xs text-slate-400">or click to browse</p>
+                      <p className="mt-3 text-[11px] text-slate-300">PDF, DOCX, TXT, or Markdown · Max 10 MB</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500">Open your syllabus, select all text, copy it, and paste it below.</p>
+                      <textarea value={freePasteText} onChange={(e) => setFreePasteText(e.target.value)} placeholder="Paste your syllabus text here..." className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-emerald-300 focus:bg-white focus:outline-none resize-none" rows={8} />
+                      <Button variant="gradient" size="sm" className="w-full gap-1.5" onClick={handleFreePasteSubmit} disabled={freePasteText.trim().length < 50}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Parse Syllabus
+                      </Button>
+                    </div>
+                  )}
+
+                  {freeUploadState === 'error' && freeParseError && (
+                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{freeParseError}
+                    </div>
+                  )}
+
+                  <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                    <p className="text-xs font-semibold text-emerald-700 mb-2">✨ What happens automatically:</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {['Course created for you', 'Deadlines become tasks', 'Exams on your calendar', 'Grade weights saved', 'Instructor info stored', 'No manual steps needed'].map((item) => (
+                        <div key={item} className="flex items-center gap-1.5">
+                          <Check className="h-3 w-3 text-emerald-500" />
+                          <span className="text-xs text-emerald-600">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Reading / parsing spinner */}
+              {(freeUploadState === 'reading' || freeUploadState === 'parsing') && (
+                <div className="flex flex-col items-center py-8 text-center">
+                  <div className="relative mb-6">
+                    <div className="h-16 w-16 rounded-full border-4 border-emerald-100" />
+                    <div className="absolute inset-0 h-16 w-16 animate-spin rounded-full border-4 border-transparent border-t-emerald-500" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 className="h-6 w-6 text-emerald-500 animate-spin" />
+                    </div>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">{freeUploadState === 'reading' ? 'Reading file...' : 'Parsing your syllabus...'}</p>
+                  {freeFileName && <p className="mt-1 text-xs text-slate-400 truncate max-w-xs">{freeFileName}</p>}
+                  {freeUploadState === 'parsing' && (
+                    <div className="mt-4 w-full max-w-xs space-y-2 text-left">
+                      {[
+                        { label: 'Reading document structure', done: true },
+                        { label: 'Extracting grade breakdown', done: true },
+                        { label: 'Identifying deadlines & dates', done: false },
+                        { label: 'Building task list', done: false },
+                      ].map((step, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          {step.done ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <div className="h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-emerald-500 animate-spin" />}
+                          <span className={step.done ? 'text-slate-600' : 'text-slate-400'}>{step.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* STEP 2 — confirm course details + task preview */}
+          {freeImportStep === 'confirm' && freeParsed && (
+            <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 'calc(80vh - 100px)' }}>
+              <div style={{ overflowY: 'auto', flex: 1 }} className="space-y-4 pr-1">
+
+                {freeParseWarning && (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{freeParseWarning}</span>
+                  </div>
+                )}
+
+                {/* Editable course fields */}
+                <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Course Details</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs font-medium mb-1 block">Course Code *</Label>
+                      <Input value={freeCourse.code} onChange={(e) => setFreeCourse((p) => ({ ...p, code: e.target.value }))} placeholder="e.g. COMP 3001" className="h-8 text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium mb-1 block">Credits</Label>
+                      <Select value={freeCourse.credits} onValueChange={(v) => setFreeCourse((p) => ({ ...p, credits: v }))}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>{['1','2','3','4','5','6'].map((c) => <SelectItem key={c} value={c}>{c} cr</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Course Name *</Label>
+                    <Input value={freeCourse.name} onChange={(e) => setFreeCourse((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Algorithms & Complexity" className="h-8 text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Instructor</Label>
+                    <Input value={freeCourse.instructor} onChange={(e) => setFreeCourse((p) => ({ ...p, instructor: e.target.value }))} placeholder="e.g. Dr. Smith" className="h-8 text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Color</Label>
+                    <div className="flex gap-2">
+                      {COURSE_COLORS.map((c) => (
+                        <button key={c} onClick={() => setFreeCourse((p) => ({ ...p, color: c }))} className={cn('h-6 w-6 rounded-full transition-all', freeCourse.color === c ? 'ring-2 ring-offset-2 ring-emerald-500 scale-110' : 'hover:scale-105')} style={{ backgroundColor: c }} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Assignments', value: freeParsed.assignments, color: 'bg-emerald-50 text-emerald-700' },
+                    { label: 'Deadlines', value: freeParsed.deadlines, color: 'bg-blue-50 text-blue-700' },
+                    { label: 'Quizzes', value: freeParsed.quizzes, color: 'bg-amber-50 text-amber-700' },
+                    { label: 'Exams', value: freeParsed.exams, color: 'bg-rose-50 text-rose-700' },
+                  ].map((s) => (
+                    <div key={s.label} className={`rounded-xl p-3 ${s.color}`}>
+                      <p className="text-xl font-extrabold">{s.value}</p>
+                      <p className="text-xs opacity-70">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Grade breakdown */}
+                {freeParsed.gradingBreakdown.length > 0 && (
+                  <div className="rounded-xl border border-slate-100 p-4">
+                    <p className="text-xs font-semibold text-slate-500 mb-2">Grade Breakdown</p>
+                    {freeParsed.gradingBreakdown.map((item) => (
+                      <div key={item.name} className="flex items-center justify-between py-1">
+                        <span className="text-sm text-slate-700">{item.name}</span>
+                        <span className="text-sm font-semibold text-slate-900">{item.weight}%</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Key dates / tasks preview */}
+                {freeParsed.keyDates.length > 0 && (
+                  <div className="rounded-xl border border-slate-100 p-4">
+                    <p className="text-xs font-semibold text-slate-500 mb-2">
+                      Tasks to be created ({freeParsed.keyDates.filter((d) => d.date && !isNaN(new Date(d.date).getTime())).length})
+                    </p>
+                    <div className="space-y-0.5">
+                      {[...freeParsed.keyDates]
+                        .filter((d) => d.date && !isNaN(new Date(d.date).getTime()))
+                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .map((d, i) => {
+                          const t = d.title.toLowerCase()
+                          const isExam = t.includes('exam') || t.includes('midterm') || t.includes('final')
+                          const isQuiz = t.includes('quiz') || t.includes('test')
+                          return (
+                            <div key={i} className="flex items-center justify-between py-1 border-b border-slate-50 last:border-0">
+                              <span className={cn('text-sm flex-1 min-w-0 truncate pr-2', isExam ? 'text-rose-600 font-semibold' : isQuiz ? 'text-amber-600 font-medium' : 'text-slate-700')}>{d.title}</span>
+                              <span className="text-xs text-slate-400 shrink-0">{new Date(d.date).toLocaleDateString()}</span>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {freeParseError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{freeParseError}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-3 mt-2 border-t border-slate-100" style={{ flexShrink: 0 }}>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => { setFreeImportStep('upload'); setFreeUploadState('idle'); setFreeParsed(null) }}>
+                  Back
+                </Button>
+                <Button
+                  variant="gradient"
+                  size="sm"
+                  className="flex-1"
+                  onClick={confirmFreeImport}
+                  disabled={freeSaving || !freeCourse.code.trim() || !freeCourse.name.trim()}
+                >
+                  {freeSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {freeSaving ? 'Creating...' : 'Create Course & Tasks'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!uploadingCourse} onOpenChange={(open) => { if (!open) resetDialog() }}>
         <DialogContent className="max-w-lg">
