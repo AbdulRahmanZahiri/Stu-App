@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PDFParse } from 'pdf-parse'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -34,30 +33,21 @@ function hasPdfHeader(buffer: Buffer): boolean {
 }
 
 async function extractPdfText(buffer: Buffer): Promise<{ text: string; pages: number }> {
-  const parser = new PDFParse({
-    data: Uint8Array.from(buffer),
-    isEvalSupported: false,
-    useSystemFonts: true,
-  })
+  // unpdf is pure JS (no native binaries) — safe on Vercel Linux
+  const { getDocumentProxy, extractText } = await import('unpdf')
 
-  try {
-    const info = await parser.getInfo()
-    if (info.total > MAX_PDF_PAGES) {
-      throw new DocumentImportError(
-        `PDFs are limited to ${MAX_PDF_PAGES} pages. Split this document into smaller files and try again.`,
-        413,
-        'TOO_MANY_PAGES',
-      )
-    }
+  const pdf = await getDocumentProxy(new Uint8Array(buffer))
 
-    const result = await parser.getText()
-    return {
-      text: normalizeExtractedText(result.text),
-      pages: result.total,
-    }
-  } finally {
-    await parser.destroy().catch(() => undefined)
+  if (pdf.numPages > MAX_PDF_PAGES) {
+    throw new DocumentImportError(
+      `PDFs are limited to ${MAX_PDF_PAGES} pages. Split this document into smaller files and try again.`,
+      413,
+      'TOO_MANY_PAGES',
+    )
   }
+
+  const { text } = await extractText(pdf, { mergePages: true })
+  return { text: normalizeExtractedText(text), pages: pdf.numPages }
 }
 
 function extractionFailure(error: unknown): NextResponse {

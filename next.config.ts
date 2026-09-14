@@ -35,10 +35,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: projectRoot,
-  outputFileTracingIncludes: {
-    '/api/extract-pdf': ['./node_modules/pdf-parse/dist/**/*'],
-  },
-  serverExternalPackages: ['@napi-rs/canvas', 'pdf-parse', 'mammoth'],
+  serverExternalPackages: ['mammoth'],
   turbopack: {
     root: projectRoot,
   },
