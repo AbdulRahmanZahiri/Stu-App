@@ -140,7 +140,7 @@ export default function CalendarPage() {
   const events = useMemo(() => {
     const existingTaskKeys = new Set(calendarEvents.map((e) => `${e.courseId ?? ''}:${e.title}:${e.startDate.toISOString()}`))
 
-    // Tasks → calendar events. Use allDay:true since task due dates have no specific time.
+    // Tasks → calendar events. allDay:true because syllabus dates have no specific time.
     const taskEvents: CalendarEvent[] = tasks.flatMap((task) => {
       if (!task.dueDate || task.status === 'completed') return []
       const key = `${task.courseId ?? ''}:${task.title}:${task.dueDate.toISOString()}`
@@ -159,16 +159,22 @@ export default function CalendarPage() {
       }]
     })
 
-    // Class events generated from course schedules for the visible range + 60-day upcoming window
-    const classRangeStart = view === 'week' ? weekStart : calStart
-    const classRangeEnd = max([
-      view === 'week' ? weekEnd : calEnd,
-      addDays(new Date(), 60),
-    ])
+    // Recompute date ranges inside the memo so the dependency array only holds
+    // stable primitives (view string, currentDate Date object that only changes
+    // on navigation). Avoids re-running on every render from new Date reference.
+    const mStart = startOfMonth(currentDate)
+    const cStart = startOfWeek(mStart)
+    const cEnd   = endOfWeek(endOfMonth(currentDate))
+    const wStart = startOfWeek(currentDate)
+    const wEnd   = endOfWeek(currentDate)
+
+    const classRangeStart = view === 'week' ? wStart : cStart
+    const classRangeEnd   = max([view === 'week' ? wEnd : cEnd, addDays(new Date(), 60)])
     const classEvents = makeClassEvents(courses, classRangeStart, classRangeEnd, user?.id ?? '')
 
     return [...calendarEvents, ...taskEvents, ...classEvents]
-  }, [calendarEvents, tasks, courses, view, weekStart, weekEnd, calStart, calEnd, user?.id])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarEvents, tasks, courses, view, currentDate, user?.id])
 
   function navigate(dir: 1 | -1) {
     setCurrentDate((d) =>
